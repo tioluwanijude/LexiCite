@@ -5,7 +5,7 @@ import urllib.request
 import re
 
 # ==========================================
-# 1. THE LOCAL HEURISTIC PARSER (Backend)
+# 1. THE ADVANCED HEURISTIC PARSER (Backend)
 # ==========================================
 class LexiCiteParser:
     def __init__(self):
@@ -17,8 +17,11 @@ class LexiCiteParser:
 
         for i, line in enumerate(lines):
             source_id = f"source{i+1}"
+            
+            # 1. Strip leading numbers/bullets
             clean_line = re.sub(r'^[\d\.\-\)\s]+', '', line).strip()
 
+            # 2. Extract URL
             url_match = re.search(r'(https?://[^\s]+|www\.[^\s]+)', clean_line, re.IGNORECASE)
             url = url_match.group(1).rstrip('.,') if url_match else ""
             
@@ -26,22 +29,49 @@ class LexiCiteParser:
                 clean_line = clean_line.replace(url_match.group(0), "").strip()
                 clean_line = re.sub(r',?\s*Accessed\s+[A-Za-z0-9\s\,]+(?:$|,)', '', clean_line, flags=re.IGNORECASE).strip()
 
+            # 3. Extract Year
             year_match = re.search(r'[\(\[](\d{4})[\)\]]', clean_line)
             year = year_match.group(1) if year_match else ""
             clean_line = clean_line.rstrip(',. ')
 
-            if ' v ' in clean_line.lower() or ' v. ' in clean_line.lower():
+            # 4. OSCOLA CATEGORIZATION ENGINE
+            clean_lower = clean_line.lower()
+            
+            # Cases
+            if re.search(r'\s+v\.?\s+|^re\s+|^ex\s+parte\s+', clean_lower):
                 entry_type = "jurisdiction"
-            elif "'" in clean_line or '"' in clean_line:
-                clean_line = clean_line.replace("'", "").replace('"', '')
+            
+            # Statutes / Legislation
+            elif re.search(r'\b(act|law|decree|edict|constitution)\b', clean_lower):
+                entry_type = "legislation"
+                
+            # Bills
+            elif re.search(r'\bbill\b', clean_lower):
+                entry_type = "bill"
+                
+            # Reports
+            elif re.search(r'\b(report|law com|cmnd?)\b', clean_lower):
+                entry_type = "report"
+                
+            # Journal Articles (Quotes or specific keywords)
+            elif "'" in clean_line or '"' in clean_line or re.search(r'\b(journal|review)\b', clean_lower):
+                clean_line = clean_line.replace("'", "").replace('"', '') # Strip quotes for Pandoc
                 entry_type = "article"
+                
+            # Webpages / Blog Posts
+            elif url:
+                entry_type = "webpage"
+                
+            # Default to Book
             else:
                 entry_type = "book"
 
+            # 5. Build BibTeX
             bibtex_entry = f"@{entry_type}{{{source_id},\n  title = {{{clean_line}}},\n  year = {{{year}}}"
             if url:
                 bibtex_entry += f",\n  url = {{{url}}}"
             bibtex_entry += "\n}\n\n"
+            
             bibtex_output += bibtex_entry
 
         return bibtex_output
@@ -94,10 +124,8 @@ class LexiCiteEngine:
 # ==========================================
 # 3. THE FRONTEND UI & UX
 # ==========================================
-# The page_icon remains "LexiCite.png" so it shows up in the browser tab!
 st.set_page_config(page_title="LexiCite Engine", page_icon="LexiCite.png", layout="wide")
 
-# Theme-Aware Styling
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
@@ -132,14 +160,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ------------------------------------------
-# Clean Title
-# ------------------------------------------
 st.markdown('<h1 class="main-title">LexiCite</h1>', unsafe_allow_html=True)
 
-# ------------------------------------------
-# Quick Guide
-# ------------------------------------------
 with st.expander("📖 How to use LexiCite", expanded=False):
     st.info("""
     **Step 1:** Draft your document in Word. Use bracketed numbers **[1]** or superscripts **¹** for your footnotes.  
@@ -148,40 +170,42 @@ with st.expander("📖 How to use LexiCite", expanded=False):
     **Step 4:** Click Compile! LexiCite will map the sources, apply OSCOLA rules, and format your document.
     """)
 
-# ------------------------------------------
-# Main Application Workspace
-# ------------------------------------------
 col1, col2 = st.columns(2, gap="large")
 
 with col1:
     with st.container(border=True):
         st.markdown("### 📄 1. Upload Draft")
         st.caption("Upload your Microsoft Word document (.docx) containing your unformatted text.")
-        st.write("") # Spacer
+        st.write("")
         uploaded_file = st.file_uploader("Word Document", type=["docx"], label_visibility="collapsed")
 
 with col2:
     with st.container(border=True):
         st.markdown("### 📚 2. Paste Sources")
         st.caption("Paste your list in order.")
-        source_list = st.text_area("Numbered List", height=150, placeholder="1. Agbaje v Commissioner of Police (1969) 1 NMLR 137\n2. https://www.courtofappeal.gov.ng/History", label_visibility="collapsed")
+        source_list = st.text_area("Numbered List", height=150, placeholder="1. Agbaje v Commissioner of Police (1969) 1 NMLR 137\n2. Electoral Act 2022\n3. https://www.courtofappeal.gov.ng/History", label_visibility="collapsed")
 
 st.write("")
 st.write("")
 
-# ------------------------------------------
-# Generation Zone
-# ------------------------------------------
 col_empty1, col_center, col_empty2 = st.columns([1, 2, 1])
 
 with col_center:
     if st.button("⚡ PARSE & COMPILE DOCUMENT", type="primary"):
-        if not uploaded_file or not source_list.strip():
-            st.error("⚠️ Please upload a document and paste your sources to proceed.")
+        # --- FILE SAFETY VALIDATION ---
+        if not uploaded_file:
+            st.error("⚠️ Please upload a Word document (.docx) to proceed.")
+        elif not uploaded_file.name.endswith(".docx"):
+            st.error("⚠️ Invalid file type. LexiCite only accepts .docx files.")
+        elif uploaded_file.size > 50 * 1024 * 1024: # 50 MB limit
+            st.error("⚠️ File is too large. Please upload a document smaller than 50MB.")
+        elif not source_list.strip():
+            st.error("⚠️ Please paste your sources to proceed.")
         else:
+            # --- CORE EXECUTION ---
             with st.status("Initializing Engine...", expanded=True) as status:
                 try:
-                    st.write("🔍 Parsing sources using heuristics...")
+                    st.write("🔍 Parsing sources & detecting legal categories...")
                     parser = LexiCiteParser()
                     bib_data = parser.generate_bibtex(source_list)
                     num_sources = len([l for l in source_list.split('\n') if l.strip()])
