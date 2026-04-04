@@ -18,10 +18,8 @@ class LexiCiteParser:
         for i, line in enumerate(lines):
             source_id = f"source{i+1}"
             
-            # 1. Strip leading numbers/bullets
             clean_line = re.sub(r'^[\d\.\-\)\s]+', '', line).strip()
 
-            # 2. Extract URL
             url_match = re.search(r'(https?://[^\s]+|www\.[^\s]+)', clean_line, re.IGNORECASE)
             url = url_match.group(1).rstrip('.,') if url_match else ""
             
@@ -29,44 +27,28 @@ class LexiCiteParser:
                 clean_line = clean_line.replace(url_match.group(0), "").strip()
                 clean_line = re.sub(r',?\s*Accessed\s+[A-Za-z0-9\s\,]+(?:$|,)', '', clean_line, flags=re.IGNORECASE).strip()
 
-            # 3. Extract Year
             year_match = re.search(r'[\(\[](\d{4})[\)\]]', clean_line)
             year = year_match.group(1) if year_match else ""
             clean_line = clean_line.rstrip(',. ')
 
-            # 4. OSCOLA CATEGORIZATION ENGINE
             clean_lower = clean_line.lower()
             
-            # Cases
             if re.search(r'\s+v\.?\s+|^re\s+|^ex\s+parte\s+', clean_lower):
                 entry_type = "jurisdiction"
-            
-            # Statutes / Legislation
             elif re.search(r'\b(act|law|decree|edict|constitution)\b', clean_lower):
                 entry_type = "legislation"
-                
-            # Bills
             elif re.search(r'\bbill\b', clean_lower):
                 entry_type = "bill"
-                
-            # Reports
             elif re.search(r'\b(report|law com|cmnd?)\b', clean_lower):
                 entry_type = "report"
-                
-            # Journal Articles (Quotes or specific keywords)
             elif "'" in clean_line or '"' in clean_line or re.search(r'\b(journal|review)\b', clean_lower):
-                clean_line = clean_line.replace("'", "").replace('"', '') # Strip quotes for Pandoc
+                clean_line = clean_line.replace("'", "").replace('"', '') 
                 entry_type = "article"
-                
-            # Webpages / Blog Posts
             elif url:
                 entry_type = "webpage"
-                
-            # Default to Book
             else:
                 entry_type = "book"
 
-            # 5. Build BibTeX
             bibtex_entry = f"@{entry_type}{{{source_id},\n  title = {{{clean_line}}},\n  year = {{{year}}}"
             if url:
                 bibtex_entry += f",\n  url = {{{url}}}"
@@ -128,7 +110,7 @@ st.set_page_config(page_title="LexiCite Engine", page_icon="LexiCite.png", layou
 
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800;900&display=swap');
     html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; }
     
     .block-container { padding-top: 2.5rem; max-width: 1000px; }
@@ -146,21 +128,40 @@ st.markdown("""
         box-shadow: 0 8px 15px rgba(59, 130, 246, 0.3);
     }
     
-    .main-title {
-        font-weight: 800; 
-        font-size: 4rem; 
-        margin: 0; 
-        padding: 0; 
-        line-height: 1.1; 
-        background: linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%); 
-        -webkit-background-clip: text; 
-        -webkit-text-fill-color: transparent;
+    /* The Typographic Logo CSS */
+    .brand-logo {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-weight: 900; 
+        font-size: 4.5rem; 
+        letter-spacing: -0.05em; 
+        margin: 0;
         margin-bottom: 2.5rem;
+        user-select: none; /* Makes it feel like an image instead of text */
+    }
+    
+    /* "Lexi" adapts to light/dark mode automatically */
+    .brand-lexi {
+        color: inherit; 
+    }
+    
+    /* "Cite" gets the vibrant gradient */
+    .brand-cite {
+        background: linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    
+    /* The modern tech accent dot */
+    .brand-dot {
+        color: #3B82F6;
     }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<h1 class="main-title">LexiCite</h1>', unsafe_allow_html=True)
+# ------------------------------------------
+# Typographic Logo Implementation
+# ------------------------------------------
+st.markdown('<h1 class="brand-logo"><span class="brand-lexi">Lexi</span><span class="brand-cite">Cite</span><span class="brand-dot">.</span></h1>', unsafe_allow_html=True)
 
 with st.expander("📖 How to use LexiCite", expanded=False):
     st.info("""
@@ -197,7 +198,7 @@ with col_center:
             st.error("⚠️ Please upload a Word document (.docx) to proceed.")
         elif not uploaded_file.name.endswith(".docx"):
             st.error("⚠️ Invalid file type. LexiCite only accepts .docx files.")
-        elif uploaded_file.size > 50 * 1024 * 1024: # 50 MB limit
+        elif uploaded_file.size > 50 * 1024 * 1024: 
             st.error("⚠️ File is too large. Please upload a document smaller than 50MB.")
         elif not source_list.strip():
             st.error("⚠️ Please paste your sources to proceed.")
