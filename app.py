@@ -137,11 +137,10 @@ st.markdown("""
         box-shadow: 0 8px 15px rgba(59, 130, 246, 0.3);
     }
     
-    /* Responsive Logo for Desktop */
+    /* Transparent Logo Container */
     .logo-container img {
-        border-radius: 16px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         margin-top: 15px;
+        /* Removed background and shadow for the transparent PNG */
     }
 </style>
 """, unsafe_allow_html=True)
@@ -153,8 +152,9 @@ col_logo, col_text = st.columns([1.5, 8.5])
 
 with col_logo:
     st.markdown('<div class="logo-container">', unsafe_allow_html=True)
-    if os.path.exists("LexiCite.jpg"):
-        st.image("LexiCite.jpg", use_container_width=True)
+    # Updated to look for the transparent PNG
+    if os.path.exists("LexiCite.png"):
+        st.image("LexiCite.png", use_container_width=True)
     else:
         st.markdown("<h1 style='font-size: 4rem;'>⚖️</h1>", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
@@ -166,10 +166,9 @@ with col_text:
 st.write("---")
 
 # ------------------------------------------
-# Quick Guide (Now Theme-Aware!)
+# Quick Guide 
 # ------------------------------------------
 with st.expander("📖 How to use LexiCite", expanded=False):
-    # Using st.info natively adapts to Dark/Light mode! No more ugly white boxes.
     st.info("""
     **Step 1:** Draft your document in Word. Use bracketed numbers **[1]** or superscripts **¹** for your footnotes.  
     **Step 2:** Upload that Word document below.  
