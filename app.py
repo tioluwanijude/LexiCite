@@ -3,9 +3,10 @@ import os
 import subprocess
 import urllib.request
 import re
+import base64
 
 # ==========================================
-# 1. THE ADVANCED HEURISTIC PARSER (Backend)
+# 1. THE NALT HEURISTIC PARSER (Backend)
 # ==========================================
 class LexiCiteParser:
     def __init__(self):
@@ -33,6 +34,7 @@ class LexiCiteParser:
 
             clean_lower = clean_line.lower()
             
+            # Localized NALT Categorization (Targeting Nigerian Legal Authorities)
             if re.search(r'\s+v\.?\s+|^re\s+|^ex\s+parte\s+', clean_lower):
                 entry_type = "jurisdiction"
             elif re.search(r'\b(act|law|decree|edict|constitution)\b', clean_lower):
@@ -59,11 +61,13 @@ class LexiCiteParser:
         return bibtex_output
 
 # ==========================================
-# 2. THE OSCOLA ENGINE (Backend)
+# 2. THE NALT COMPILATION ENGINE (Backend)
 # ==========================================
 class LexiCiteEngine:
     def __init__(self, csl_url="https://raw.githubusercontent.com/citation-style-language/styles/master/oscola.csl"):
-        self.csl_filename = "oscola.csl"
+        # The NALT format officially adapts the OSCOLA mechanics. 
+        # We download the framework but save it locally as the NALT style ruleset.
+        self.csl_filename = "nalt_style.csl"
         self._ensure_csl(csl_url)
 
     def _ensure_csl(self, url):
@@ -106,7 +110,7 @@ class LexiCiteEngine:
 # ==========================================
 # 3. THE FRONTEND UI & UX
 # ==========================================
-st.set_page_config(page_title="LexiCite Engine", page_icon="LexiCite.png", layout="wide")
+st.set_page_config(page_title="LexiCite NALT Engine", page_icon="LexiCite.png", layout="wide")
 
 st.markdown("""
 <style>
@@ -128,7 +132,6 @@ st.markdown("""
         box-shadow: 0 8px 15px rgba(59, 130, 246, 0.3);
     }
     
-    /* The Typographic Logo CSS */
     .brand-logo {
         font-family: 'Plus Jakarta Sans', sans-serif;
         font-weight: 900; 
@@ -136,25 +139,18 @@ st.markdown("""
         letter-spacing: -0.05em; 
         margin: 0;
         margin-bottom: 2.5rem;
-        user-select: none; /* Makes it feel like an image instead of text */
+        user-select: none;
     }
     
-    /* "Lexi" adapts to light/dark mode automatically */
-    .brand-lexi {
-        color: inherit; 
-    }
+    .brand-lexi { color: inherit; }
     
-    /* "Cite" gets the vibrant gradient */
     .brand-cite {
         background: linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
     }
     
-    /* The modern tech accent dot */
-    .brand-dot {
-        color: #3B82F6;
-    }
+    .brand-dot { color: #3B82F6; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -168,7 +164,7 @@ with st.expander("📖 How to use LexiCite", expanded=False):
     **Step 1:** Draft your document in Word. Use bracketed numbers **[1]** or superscripts **¹** for your footnotes.  
     **Step 2:** Upload that Word document below.  
     **Step 3:** Paste your list of sources in the exact order they appear in your text.  
-    **Step 4:** Click Compile! LexiCite will map the sources, apply OSCOLA rules, and format your document.
+    **Step 4:** Click Compile! LexiCite will map the sources, apply NALT rules, and format your document.
     """)
 
 col1, col2 = st.columns(2, gap="large")
@@ -184,7 +180,7 @@ with col2:
     with st.container(border=True):
         st.markdown("### 📚 2. Paste Sources")
         st.caption("Paste your list in order.")
-        source_list = st.text_area("Numbered List", height=150, placeholder="1. Agbaje v Commissioner of Police (1969) 1 NMLR 137\n2. Electoral Act 2022\n3. https://www.courtofappeal.gov.ng/History", label_visibility="collapsed")
+        source_list = st.text_area("Numbered List", height=150, placeholder="1. Abacha v Fawehinmi [2000] FWLR (Pt 4) 533\n2. Freedom of Information Act 2011\n3. https://www.SabiLaw.org", label_visibility="collapsed")
 
 st.write("")
 st.write("")
@@ -204,14 +200,14 @@ with col_center:
             st.error("⚠️ Please paste your sources to proceed.")
         else:
             # --- CORE EXECUTION ---
-            with st.status("Initializing Engine...", expanded=True) as status:
+            with st.status("Initializing NALT Engine...", expanded=True) as status:
                 try:
                     st.write("🔍 Parsing sources & detecting legal categories...")
                     parser = LexiCiteParser()
                     bib_data = parser.generate_bibtex(source_list)
                     num_sources = len([l for l in source_list.split('\n') if l.strip()])
 
-                    st.write("⚙️ Formatting OSCOLA Footnotes & Cross-References...")
+                    st.write("⚙️ Formatting NALT Footnotes & Cross-References...")
                     engine = LexiCiteEngine()
                     final_path = engine.format_document(uploaded_file.getbuffer(), bib_data, num_sources)
                     
@@ -224,7 +220,7 @@ with col_center:
                         st.download_button(
                             label="📥 DOWNLOAD FORMATTED .DOCX", 
                             data=f, 
-                            file_name="LexiCite_Formatted.docx", 
+                            file_name="LexiCite_Formatted_NALT.docx", 
                             use_container_width=True,
                             type="primary"
                         )
