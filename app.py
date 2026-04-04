@@ -3,7 +3,6 @@ import os
 import subprocess
 import urllib.request
 import re
-import base64
 
 # ==========================================
 # 1. THE NALT HEURISTIC PARSER (Backend)
@@ -19,8 +18,21 @@ class LexiCiteParser:
         for i, line in enumerate(lines):
             source_id = f"source{i+1}"
             
+            # 1. Strip leading numbers/bullets
             clean_line = re.sub(r'^[\d\.\-\)\s]+', '', line).strip()
 
+            # 2. NALT RULE: Omit titles, prefixes, and post-nominals (Page 71 NALT Guide)
+            nalt_titles = r'\b(Mr\.|Mrs\.|Dr\.|Dr|Prof\.|Professor|Hon\.|Honourable|Justice|Rev\.|Bishop|Alhaji|Hajiya|Chief|SAN|OFR|OON|GCON)\b\,?'
+            clean_line = re.sub(nalt_titles, '', clean_line, flags=re.IGNORECASE)
+            
+            # 3. NALT RULE: No full stops in abbreviations / unpunctuated 'v' (Page 59 & 67 NALT Guide)
+            clean_line = re.sub(r'\s+v\.?\s+', ' v ', clean_line, flags=re.IGNORECASE)
+            
+            # Cleanup double spaces or stray commas left by title stripping
+            clean_line = re.sub(r',\s*,', ',', clean_line)
+            clean_line = re.sub(r'\s+', ' ', clean_line).strip()
+
+            # 4. Extract URL
             url_match = re.search(r'(https?://[^\s]+|www\.[^\s]+)', clean_line, re.IGNORECASE)
             url = url_match.group(1).rstrip('.,') if url_match else ""
             
@@ -28,14 +40,15 @@ class LexiCiteParser:
                 clean_line = clean_line.replace(url_match.group(0), "").strip()
                 clean_line = re.sub(r',?\s*Accessed\s+[A-Za-z0-9\s\,]+(?:$|,)', '', clean_line, flags=re.IGNORECASE).strip()
 
+            # 5. Extract Year
             year_match = re.search(r'[\(\[](\d{4})[\)\]]', clean_line)
             year = year_match.group(1) if year_match else ""
             clean_line = clean_line.rstrip(',. ')
 
+            # 6. NALT CATEGORIZATION ENGINE
             clean_lower = clean_line.lower()
             
-            # Localized NALT Categorization (Targeting Nigerian Legal Authorities)
-            if re.search(r'\s+v\.?\s+|^re\s+|^ex\s+parte\s+', clean_lower):
+            if re.search(r'\s+v\s+|^re\s+|^ex\s+parte\s+', clean_lower):
                 entry_type = "jurisdiction"
             elif re.search(r'\b(act|law|decree|edict|constitution)\b', clean_lower):
                 entry_type = "legislation"
@@ -51,6 +64,7 @@ class LexiCiteParser:
             else:
                 entry_type = "book"
 
+            # 7. Build BibTeX
             bibtex_entry = f"@{entry_type}{{{source_id},\n  title = {{{clean_line}}},\n  year = {{{year}}}"
             if url:
                 bibtex_entry += f",\n  url = {{{url}}}"
@@ -65,9 +79,8 @@ class LexiCiteParser:
 # ==========================================
 class LexiCiteEngine:
     def __init__(self, csl_url="https://raw.githubusercontent.com/citation-style-language/styles/master/oscola.csl"):
-        # The NALT format officially adapts the OSCOLA mechanics. 
-        # We download the framework but save it locally as the NALT style ruleset.
-        self.csl_filename = "nalt_style.csl"
+        # NALT utilizes OSCOLA mechanics for formatting and cross-referencing.
+        self.csl_filename = "nalt_core.csl"
         self._ensure_csl(csl_url)
 
     def _ensure_csl(self, url):
@@ -110,7 +123,7 @@ class LexiCiteEngine:
 # ==========================================
 # 3. THE FRONTEND UI & UX
 # ==========================================
-st.set_page_config(page_title="LexiCite NALT Engine", page_icon="LexiCite.png", layout="wide")
+st.set_page_config(page_title="LexiCite | NALT Engine", page_icon="LexiCite.png", layout="wide")
 
 st.markdown("""
 <style>
@@ -139,7 +152,7 @@ st.markdown("""
         letter-spacing: -0.05em; 
         margin: 0;
         margin-bottom: 2.5rem;
-        user-select: none;
+        user-select: none; 
     }
     
     .brand-lexi { color: inherit; }
@@ -154,17 +167,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ------------------------------------------
-# Typographic Logo Implementation
-# ------------------------------------------
 st.markdown('<h1 class="brand-logo"><span class="brand-lexi">Lexi</span><span class="brand-cite">Cite</span><span class="brand-dot">.</span></h1>', unsafe_allow_html=True)
 
-with st.expander("📖 How to use LexiCite", expanded=False):
+with st.expander("📖 How to use the LexiCite NALT Engine", expanded=False):
     st.info("""
     **Step 1:** Draft your document in Word. Use bracketed numbers **[1]** or superscripts **¹** for your footnotes.  
-    **Step 2:** Upload that Word document below.  
-    **Step 3:** Paste your list of sources in the exact order they appear in your text.  
-    **Step 4:** Click Compile! LexiCite will map the sources, apply NALT rules, and format your document.
+    **Step 2:** Upload your draft below.  
+    **Step 3:** Paste your list of sources.  
+    **Step 4:** Click Compile! LexiCite will scrub titles (e.g., Prof., SAN), normalize your citations, and apply the official NALT formatting rules.
     """)
 
 col1, col2 = st.columns(2, gap="large")
@@ -172,15 +182,13 @@ col1, col2 = st.columns(2, gap="large")
 with col1:
     with st.container(border=True):
         st.markdown("### 📄 1. Upload Draft")
-        st.caption("Upload your Microsoft Word document (.docx) containing your unformatted text.")
         st.write("")
         uploaded_file = st.file_uploader("Word Document", type=["docx"], label_visibility="collapsed")
 
 with col2:
     with st.container(border=True):
         st.markdown("### 📚 2. Paste Sources")
-        st.caption("Paste your list in order.")
-        source_list = st.text_area("Numbered List", height=150, placeholder="1. Abacha v Fawehinmi [2000] FWLR (Pt 4) 533\n2. Freedom of Information Act 2011\n3. https://www.SabiLaw.org", label_visibility="collapsed")
+        source_list = st.text_area("Numbered List", height=150, placeholder="1. Prof. Abacha v. Fawehinmi [2000] FWLR (Pt 4) 533\n2. Electoral Act 2022\n3. https://www.courtofappeal.gov.ng/History", label_visibility="collapsed")
 
 st.write("")
 st.write("")
@@ -188,8 +196,7 @@ st.write("")
 col_empty1, col_center, col_empty2 = st.columns([1, 2, 1])
 
 with col_center:
-    if st.button("⚡ PARSE & COMPILE DOCUMENT", type="primary"):
-        # --- FILE SAFETY VALIDATION ---
+    if st.button("⚡ PARSE & COMPILE NALT DOCUMENT", type="primary"):
         if not uploaded_file:
             st.error("⚠️ Please upload a Word document (.docx) to proceed.")
         elif not uploaded_file.name.endswith(".docx"):
@@ -199,28 +206,27 @@ with col_center:
         elif not source_list.strip():
             st.error("⚠️ Please paste your sources to proceed.")
         else:
-            # --- CORE EXECUTION ---
             with st.status("Initializing NALT Engine...", expanded=True) as status:
                 try:
-                    st.write("🔍 Parsing sources & detecting legal categories...")
+                    st.write("🔍 Scrubbing titles, punctuation, and classifying sources...")
                     parser = LexiCiteParser()
                     bib_data = parser.generate_bibtex(source_list)
                     num_sources = len([l for l in source_list.split('\n') if l.strip()])
 
-                    st.write("⚙️ Formatting NALT Footnotes & Cross-References...")
+                    st.write("⚙️ Applying NALT Formatting & Cross-References...")
                     engine = LexiCiteEngine()
                     final_path = engine.format_document(uploaded_file.getbuffer(), bib_data, num_sources)
                     
                     status.update(label="Compilation Complete!", state="complete")
                     
-                    st.success("✅ Document formatted successfully!")
+                    st.success("✅ NALT Document formatted successfully!")
                     st.balloons()
 
                     with open(final_path, "rb") as f:
                         st.download_button(
                             label="📥 DOWNLOAD FORMATTED .DOCX", 
                             data=f, 
-                            file_name="LexiCite_Formatted_NALT.docx", 
+                            file_name="LexiCite_NALT_Formatted.docx", 
                             use_container_width=True,
                             type="primary"
                         )
