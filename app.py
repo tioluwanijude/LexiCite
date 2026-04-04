@@ -3,6 +3,7 @@ import os
 import subprocess
 import urllib.request
 import re
+import base64
 
 # ==========================================
 # 1. THE LOCAL HEURISTIC PARSER (Backend)
@@ -92,9 +93,18 @@ class LexiCiteEngine:
                 if os.path.exists(f): os.remove(f)
 
 # ==========================================
-# 3. THE FRONTEND UI & UX
+# 3. HELPER: IMAGE CONVERTER
 # ==========================================
-st.set_page_config(page_title="LexiCite Engine", page_icon="⚖️", layout="wide")
+def get_base64_of_bin_file(bin_file):
+    with open(bin_file, 'rb') as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
+
+# ==========================================
+# 4. THE FRONTEND UI & UX
+# ==========================================
+# FIX: The page_icon is now pointing to your logo file instead of the scale emoji!
+st.set_page_config(page_title="LexiCite Engine", page_icon="LexiCite.png", layout="wide")
 
 # Theme-Aware Styling
 st.markdown("""
@@ -102,21 +112,8 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
     html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; }
     
-    /* Clean up default Streamlit padding */
-    .block-container { padding-top: 3rem; max-width: 1000px; }
-    
-    /* Dynamic gradient that looks gorgeous on dark and light mode */
-    .main-title { 
-        font-weight: 800; 
-        font-size: 4rem; 
-        letter-spacing: -0.03em;
-        background: linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%); 
-        -webkit-background-clip: text; 
-        -webkit-text-fill-color: transparent; 
-        margin-bottom: 2rem;
-    }
+    .block-container { padding-top: 2.5rem; max-width: 1000px; }
 
-    /* Modern Button Styling */
     .stButton>button[kind="primary"] { 
         font-weight: 700; 
         border-radius: 8px; 
@@ -129,31 +126,30 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 8px 15px rgba(59, 130, 246, 0.3);
     }
-    
-    /* Responsive Logo for Desktop */
-    .logo-container img {
-        margin-top: 15px;
-    }
 </style>
 """, unsafe_allow_html=True)
 
 # ------------------------------------------
-# Desktop/Mobile Native Header
+# Custom Header (Perfect Alignment & Contrast)
 # ------------------------------------------
-col_logo, col_text = st.columns([1.5, 8.5])
+header_html = ""
+if os.path.exists("LexiCite.png"):
+    img_b64 = get_base64_of_bin_file("LexiCite.png")
+    header_html = f"""
+    <div style="display: flex; align-items: center; gap: 25px; margin-bottom: 2.5rem;">
+        <div style="background-color: white; padding: 15px; border-radius: 18px; width: 100px; height: 100px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
+            <img src="data:image/png;base64,{img_b64}" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+        </div>
+        <div style="display: flex; flex-direction: column; justify-content: center;">
+            <h1 style="font-weight: 800; font-size: 3.8rem; margin: 0; padding: 0; line-height: 1.1; background: linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">LexiCite</h1>
+            <span style="color: #94a3b8; font-size: 1.2rem; font-weight: 500; margin-top: 8px;">The 100% Offline, Privacy-First OSCOLA Engine</span>
+        </div>
+    </div>
+    """
+else:
+    header_html = "<h1 style='font-size: 4rem; margin-bottom: 2rem;'>⚖️ LexiCite</h1>"
 
-with col_logo:
-    st.markdown('<div class="logo-container">', unsafe_allow_html=True)
-    if os.path.exists("LexiCite.png"):
-        st.image("LexiCite.png", use_container_width=True)
-    else:
-        st.markdown("<h1 style='font-size: 4rem;'>⚖️</h1>", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col_text:
-    st.markdown("<h1 class='main-title'>LexiCite</h1>", unsafe_allow_html=True)
-
-st.write("---")
+st.markdown(header_html, unsafe_allow_html=True)
 
 # ------------------------------------------
 # Quick Guide
@@ -201,20 +197,17 @@ with col_center:
         else:
             with st.status("Initializing Engine...", expanded=True) as status:
                 try:
-                    # 1. Parse Data
                     st.write("🔍 Parsing sources using heuristics...")
                     parser = LexiCiteParser()
                     bib_data = parser.generate_bibtex(source_list)
                     num_sources = len([l for l in source_list.split('\n') if l.strip()])
 
-                    # 2. Format Document
                     st.write("⚙️ Formatting OSCOLA Footnotes & Cross-References...")
                     engine = LexiCiteEngine()
                     final_path = engine.format_document(uploaded_file.getbuffer(), bib_data, num_sources)
                     
                     status.update(label="Compilation Complete!", state="complete")
                     
-                    # 3. Success UI
                     st.success("✅ Document formatted successfully!")
                     st.balloons()
 
