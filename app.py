@@ -3,157 +3,107 @@ import os
 import subprocess
 import urllib.request
 import re
-import google.generativeai as genai
 
 # ==========================================
-# 1. THE AI PARSER (Backend)
+# 1. THE LOCAL HEURISTIC PARSER (Backend)
 # ==========================================
 class LexiCiteParser:
-    def __init__(self, api_key):
-        """Initializes the AI parser with the provided Gemini API key."""
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+    def __init__(self):
+        # No API key needed! The brain is now 100% local.
+        pass
 
     def generate_bibtex(self, source_list):
-        """Sends the raw text list to the LLM and enforces a strict BibTeX output."""
-        system_prompt = f"""
-        You are an expert legal data parser adhering to OSCOLA standards.
-        Convert the following numbered list of legal sources into a valid BibTeX database.
-        
-        CRITICAL RULES:
-        1. The BibTeX citation key for each entry MUST strictly be "source" followed by its number in the list (e.g., source1, source2).
-        2. Accurately categorize cases as @misc or @jurisdiction, books as @book, articles as @article.
-        3. Output ONLY the raw BibTeX code. Do not use markdown formatting (like ```bibtex), do not add introductory or concluding remarks. Just the pure text database.
-        
-        SOURCE LIST:
-        {source_list}
         """
-        try:
-            response = self.model.generate_content(system_prompt)
-            clean_bibtex = response.text.replace('```bibtex', '').replace('```', '').strip()
+        Uses Regular Expressions to parse a human-readable list into BibTeX.
+        """
+        lines = [line.strip() for line in source_list.split('\n') if line.strip()]
+        bibtex_output = ""
+
+        for i, line in enumerate(lines):
+            source_id = f"source{i+1}"
+
+            # 1. Strip leading numbers or bullets (e.g., "1. ", "2) ", "- ")
+            clean_line = re.sub(r'^[\d\.\-\)\s]+', '', line).strip()
+
+            # 2. Extract the year (Looks for 4 digits inside () or [])
+            year_match = re.search(r'[\(\[](\d{4})[\)\]]', clean_line)
+            year = year_match.group(1) if year_match else ""
+
+            # 3. Categorize based on legal keywords
+            if ' v ' in clean_line.lower() or ' v. ' in clean_line.lower():
+                # It is a Case
+                bibtex_output += f"@jurisdiction{{{source_id},\n  title = {{{clean_line}}},\n  year = {{{year}}}\n}}\n\n"
             
-            if not clean_bibtex.startswith('@'):
-                raise ValueError("The AI did not return valid BibTeX format.")
-            return clean_bibtex
-        except Exception as e:
-            raise Exception(f"AI Parsing Failed: {str(e)}")
+            elif "'" in clean_line or '"' in clean_line:
+                # It is likely an Article (OSCOLA puts article titles in quotes)
+                # Strip the quotes for the title field so Pandoc doesn't double-quote them
+                clean_title = clean_line.replace("'", "").replace('"', '')
+                bibtex_output += f"@article{{{source_id},\n  title = {{{clean_title}}},\n  year = {{{year}}}\n}}\n\n"
+            
+            else:
+                # Default to Book or General Source
+                bibtex_output += f"@book{{{source_id},\n  title = {{{clean_line}}},\n  year = {{{year}}}\n}}\n\n"
+
+        return bibtex_output
 
 
 # ==========================================
 # 2. THE OSCOLA ENGINE (Backend)
 # ==========================================
 class LexiCiteEngine:
-    def __init__(self, csl_url="[https://raw.githubusercontent.com/citation-style-language/styles/master/oscola.csl](https://raw.githubusercontent.com/citation-style-language/styles/master/oscola.csl)"):
+    def __init__(self, csl_url="https://raw.githubusercontent.com/citation-style-language/styles/master/oscola.csl"):
         self.csl_filename = "oscola.csl"
-        self.csl_url = csl_url
-        self._ensure_csl()
+        self._ensure_csl(csl_url)
 
-    def _ensure_csl(self):
-        """Downloads the official OSCOLA ruleset if it isn't already in the folder."""
+    def _ensure_csl(self, url):
+        """Downloads the official OSCOLA ruleset if missing."""
         if not os.path.exists(self.csl_filename):
-            urllib.request.urlretrieve(self.csl_url, self.csl_filename)
+            urllib.request.urlretrieve(url, self.csl_filename)
 
     def _to_unicode_super(self, num_str):
-        """Converts standard string numbers to Unicode superscripts."""
         super_map = {'0':'⁰', '1':'¹', '2':'²', '3':'³', '4':'⁴', '5':'⁵', '6':'⁶', '7':'⁷', '8':'⁸', '9':'⁹'}
         return "".join([super_map[char] for char in num_str])
 
     def format_document(self, docx_bytes, bibtex_data, num_sources):
-        """Processes the Word document, BibTeX, and applies OSCOLA logic."""
-        input_docx = "temp_input.docx"
-        md_file = "temp_draft.md"
-        bib_file = "library.bib"
-        output_docx = "LexiCite_Formatted.docx"
-
+        input_docx, md_file, bib_file, output_docx = "temp_in.docx", "temp.md", "library.bib", "LexiCite_Formatted.docx"
         try:
-            # Write files
-            with open(bib_file, "w", encoding="utf-8") as f:
-                f.write(bibtex_data)
-            with open(input_docx, "wb") as f:
-                f.write(docx_bytes)
+            with open(bib_file, "w", encoding="utf-8") as f: f.write(bibtex_data)
+            with open(input_docx, "wb") as f: f.write(docx_bytes)
 
-            # Convert to Markdown
-            subprocess.run(["pandoc", input_docx, "-t", "markdown", "-o", md_file], capture_output=True, text=True, check=True)
+            subprocess.run(["pandoc", input_docx, "-t", "markdown", "-o", md_file], check=True)
+            with open(md_file, "r", encoding="utf-8") as f: md_text = f.read()
 
-            # Read Markdown
-            with open(md_file, "r", encoding="utf-8") as f:
-                md_text = f.read()
-
-            # Mapping Logic
-            mapped_nums = [str(i) for i in range(1, num_sources + 1)]
-            sorted_nums = sorted(mapped_nums, key=len, reverse=True)
+            sorted_nums = sorted([str(i) for i in range(1, num_sources + 1)], key=len, reverse=True)
             footnote_appendix = "\n\n"
 
             for num in sorted_nums:
-                key = f"source{num}"
-                footnote_marker = f"[^{num}]"
-                
-                unicode_sup = self._to_unicode_super(str(num))
-                md_text = md_text.replace(unicode_sup, footnote_marker)
-                md_text = re.sub(r'\^\s*' + re.escape(str(num)) + r'\s*\^', footnote_marker, md_text)
-                md_text = re.sub(r'\\?\[\s*' + re.escape(str(num)) + r'\s*\\?\]', footnote_marker, md_text)
-                md_text = re.sub(r'\(\s*' + re.escape(str(num)) + r'\s*\)', footnote_marker, md_text)
-                md_text = re.sub(r'<\s*sup\s*>\s*' + re.escape(str(num)) + r'\s*<\s*/\s*sup\s*>', footnote_marker, md_text, flags=re.IGNORECASE)
-                
-                footnote_appendix += f"[^{num}]: [@{key}]\n\n"
+                marker = f"[^{num}]"
+                md_text = md_text.replace(self._to_unicode_super(num), marker)
+                md_text = re.sub(r'\\?\[\s*' + num + r'\s*\\?\]', marker, md_text)
+                md_text = re.sub(r'\(\s*' + num + r'\s*\)', marker, md_text)
+                md_text = re.sub(r'\^\s*' + num + r'\s*\^', marker, md_text)
+                footnote_appendix += f"[^{num}]: [@source{num}]\n\n"
 
             md_text += footnote_appendix
-            with open(md_file, "w", encoding="utf-8") as f:
-                f.write(md_text)
+            with open(md_file, "w", encoding="utf-8") as f: f.write(md_text)
 
-            # Pandoc Compilation
-            result = subprocess.run([
-                "pandoc", md_file, 
-                "--citeproc", 
-                f"--bibliography={bib_file}", 
-                f"--csl={self.csl_filename}", 
-                "-M", "suppress-bibliography=true", 
-                "-o", output_docx
-            ], capture_output=True, text=True)
-
-            if result.returncode != 0:
-                raise Exception(f"Pandoc Compilation Error: {result.stderr}")
-
+            subprocess.run(["pandoc", md_file, "--citeproc", f"--bibliography={bib_file}", f"--csl={self.csl_filename}", "-M", "suppress-bibliography=true", "-o", output_docx], check=True)
             return output_docx
-
         finally:
-            for file in [input_docx, md_file, bib_file]:
-                if os.path.exists(file):
-                    os.remove(file)
-
+            for f in [input_docx, md_file, bib_file]: 
+                if os.path.exists(f): os.remove(f)
 
 # ==========================================
-# 3. THE FRONTEND UI (Streamlit)
+# 3. THE FRONTEND UI
 # ==========================================
-st.set_page_config(page_title="LexiCite Engine", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="LexiCite Engine", page_icon="⚡", layout="wide")
 
-# CSS Styling
 st.markdown("""
 <style>
-    @import url('[https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap](https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap)');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
     html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; }
-    .block-container { padding-top: 2rem; padding-bottom: 2rem; max-width: 95%; }
-
-    .main-title {
-        font-weight: 800; font-size: 3.5rem; margin-bottom: 0rem; letter-spacing: -0.03em;
-        background: linear-gradient(135deg, #8B1A1A 0%, #D2B48C 100%); 
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    }
-    .main-subtitle { color: #94A3B8; font-size: 1.2rem; font-weight: 500; margin-bottom: 2rem; letter-spacing: -0.01em; }
-
-    .stButton>button[kind="primary"] {
-        background: linear-gradient(135deg, #8B1A1A 0%, #A52A2A 100%);
-        color: white; border-radius: 12px; padding: 0.8rem 2rem; font-size: 1.1rem;
-        font-weight: 600; border: none; box-shadow: 0 4px 20px rgba(139, 26, 26, 0.4);
-        transition: all 0.3s ease; width: 100%; text-transform: uppercase; letter-spacing: 0.05em;
-    }
-    .stButton>button[kind="primary"]:hover { transform: translateY(-3px); box-shadow: 0 8px 30px rgba(139, 26, 26, 0.6); }
-
-    .stTextArea textarea {
-        border-radius: 10px; padding: 1rem; font-size: 1rem; line-height: 1.6; transition: all 0.3s;
-        border: 1px solid rgba(156, 163, 175, 0.3);
-    }
-    .stTextArea textarea:focus { border-color: #8B1A1A; box-shadow: 0 0 0 3px rgba(139, 26, 26, 0.2); }
+    .main-title { font-weight: 800; font-size: 3rem; background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .stButton>button[kind="primary"] { background: #1E3A8A; color: white; border-radius: 8px; width: 100%; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -163,83 +113,53 @@ with col_logo:
     if os.path.exists("LexiCite.jpg"):
         st.image("LexiCite.jpg", use_container_width=True)
 with col_text:
-    st.markdown("<div class='main-title'>LexiCite</div>", unsafe_allow_html=True)
-    st.markdown("<div class='main-subtitle'>Standalone OSCOLA Engine with AI Parsing</div>", unsafe_allow_html=True)
+    st.markdown("<div class='main-title'>LexiCite Engine</div>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #64748b; font-size: 1.1rem;'>The Offline OSCOLA Formatting Tool</p>", unsafe_allow_html=True)
 
-# Sidebar
-with st.sidebar:
-    if os.path.exists("LexiCite.jpg"):
-        st.image("LexiCite.jpg", use_container_width=True)
-        st.markdown("---")
-        
-    st.markdown("## 🧠 AI Brain Setup")
-    st.caption("Enter your free Google Gemini API key to activate the parser.")
-    api_key = st.text_input("Gemini API Key", type="password")
-    st.markdown("[Get a free key here](https://aistudio.google.com/app/apikey)")
+st.write("---")
 
-# Main Application Logic
-if not api_key:
-    st.markdown("""
-    <div style='text-align: center; padding: 4rem 2rem; background-color: #f8fafc; border-radius: 16px; border: 1px dashed #cbd5e1; margin-top: 2rem;'>
-        <h2>Welcome to the LexiCite Engine</h2>
-        <p style='color: #64748b; font-size: 1.1rem;'>Please enter your Gemini API Key in the sidebar to activate the citation parser.</p>
-    </div>
-    """, unsafe_allow_html=True)
+# Main Interface
+col1, col2 = st.columns([1, 1], gap="large")
 
-else:
-    col1, col2 = st.columns(2, gap="large")
+with col1:
+    with st.container(border=True):
+        st.markdown("### 📄 Step 1: Upload Draft")
+        st.caption("Upload your Word document (.docx) with superscript numbers.")
+        uploaded_file = st.file_uploader("Word Document", type=["docx"], label_visibility="collapsed")
 
-    with col1:
-        with st.container(border=True):
-            st.markdown("### 📄 Step 1: Upload Draft (.docx)")
-            st.caption("Upload your Word document containing footnote markers (e.g. [1], ¹, ^1^).")
-            uploaded_file = st.file_uploader("Upload Word Document", type=["docx"], label_visibility="collapsed")
+with col2:
+    with st.container(border=True):
+        st.markdown("### 📚 Step 2: Paste Sources")
+        st.caption("Paste your list in order. The local engine will parse them automatically.")
+        source_list = st.text_area("Numbered List", height=150, placeholder="1. Agbaje v Commissioner of Police (1969) 1 NMLR 137\n2. Malemi E, The Nigerian Constitutional Law (2012)")
 
-    with col2:
-        with st.container(border=True):
-            st.markdown("### 📚 Step 2: Paste Source List")
-            st.caption("Paste your numbered list of sources. The AI will convert them automatically.")
-            source_list = st.text_area("Source List", height=200, placeholder="1. Agbaje v Commissioner of Police (1969) 1 NMLR 137\n2. Malemi E, The Nigerian Constitutional Law (2012)")
+st.write("")
 
-    st.write("") 
+if st.button("⚡ PARSE & COMPILE DOCUMENT", type="primary"):
+    if not uploaded_file or not source_list.strip():
+        st.error("⚠️ Please upload a document and paste your sources.")
+    else:
+        with st.status("Initializing Local Engine...", expanded=True) as status:
+            try:
+                # 1. Parse Data Locally
+                st.write("🔍 Parsing sources using local heuristics...")
+                parser = LexiCiteParser()
+                bib_data = parser.generate_bibtex(source_list)
+                num_sources = len([l for l in source_list.split('\n') if l.strip()])
 
-    col_empty1, col_center, col_empty2 = st.columns([1, 2, 1])
+                # 2. Format Document
+                st.write("⚙️ Formatting OSCOLA Footnotes...")
+                engine = LexiCiteEngine()
+                final_path = engine.format_document(uploaded_file.getbuffer(), bib_data, num_sources)
+                
+                status.update(label="Compilation Complete!", state="complete")
+                st.balloons()
 
-    with col_center:
-        if st.button("⚡ Parse & Compile Document", type="primary"):
-            if uploaded_file is None or not source_list.strip():
-                st.warning("⚠️ Please upload your .docx file and paste your source list to proceed.")
-            else:
-                with st.status("Initializing LexiCite Engine...", expanded=True) as status:
-                    try:
-                        # STAGE 1: AI PARSING
-                        st.write("🧠 AI is parsing and structuring your sources...")
-                        ai_parser = LexiCiteParser(api_key=api_key)
-                        bibtex_data = ai_parser.generate_bibtex(source_list)
-                        num_sources = len([line for line in source_list.split('\n') if line.strip()])
+                with st.expander("View System-Generated BibTeX Data"):
+                    st.code(bib_data, language="bibtex")
 
-                        # STAGE 2: OSCOLA ENGINE
-                        st.write("⚙️ Running LexiCite Engine (Applying OSCOLA logic)...")
-                        engine = LexiCiteEngine()
-                        formatted_doc_path = engine.format_document(
-                            docx_bytes=uploaded_file.getbuffer(),
-                            bibtex_data=bibtex_data,
-                            num_sources=num_sources
-                        )
-                        
-                        status.update(label="Compilation Complete!", state="complete", expanded=False)
-                        st.balloons()
-                        
-                        with st.expander("View AI-Generated BibTeX Data"):
-                            st.code(bibtex_data, language="bibtex")
-                        
-                        col_met1, col_met2 = st.columns(2)
-                        col_met1.metric(label="Sources Formatted", value=f"{num_sources}")
-                        col_met2.metric(label="Document Status", value="Ready")
-                        
-                        with open(formatted_doc_path, "rb") as file:
-                            st.download_button("📥 Download Formatted Document", file, "LexiCite_Formatted.docx", use_container_width=True)
-                    
-                    except Exception as e:
-                        status.update(label="System Error Occurred", state="error", expanded=True)
-                        st.error(f"System Error: {e}")
+                with open(final_path, "rb") as f:
+                    st.download_button("📥 Download Document", f, "LexiCite_Formatted.docx")
+            except Exception as e:
+                status.update(label="System Error Occurred", state="error", expanded=True)
+                st.error(f"Error: {e}")
