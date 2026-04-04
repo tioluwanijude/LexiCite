@@ -113,13 +113,6 @@ st.markdown("""
         background: linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%); 
         -webkit-background-clip: text; 
         -webkit-text-fill-color: transparent; 
-        margin-bottom: -10px;
-    }
-    
-    .subtitle {
-        font-size: 1.25rem; 
-        opacity: 0.8; 
-        font-weight: 500;
         margin-bottom: 2rem;
     }
 
@@ -137,10 +130,9 @@ st.markdown("""
         box-shadow: 0 8px 15px rgba(59, 130, 246, 0.3);
     }
     
-    /* Transparent Logo Container */
+    /* Responsive Logo for Desktop */
     .logo-container img {
         margin-top: 15px;
-        /* Removed background and shadow for the transparent PNG */
     }
 </style>
 """, unsafe_allow_html=True)
@@ -152,7 +144,6 @@ col_logo, col_text = st.columns([1.5, 8.5])
 
 with col_logo:
     st.markdown('<div class="logo-container">', unsafe_allow_html=True)
-    # Updated to look for the transparent PNG
     if os.path.exists("LexiCite.png"):
         st.image("LexiCite.png", use_container_width=True)
     else:
@@ -161,12 +152,11 @@ with col_logo:
 
 with col_text:
     st.markdown("<h1 class='main-title'>LexiCite</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='subtitle'>The 100% Offline, Privacy-First OSCOLA Engine</p>", unsafe_allow_html=True)
 
 st.write("---")
 
 # ------------------------------------------
-# Quick Guide 
+# Quick Guide
 # ------------------------------------------
 with st.expander("📖 How to use LexiCite", expanded=False):
     st.info("""
@@ -193,7 +183,7 @@ with col1:
 with col2:
     with st.container(border=True):
         st.markdown("### 📚 2. Paste Sources")
-        st.caption("Paste your list in order. Ensure cases have 'v' and web sources include the URL.")
+        st.caption("Paste your list in order.")
         source_list = st.text_area("Numbered List", height=150, placeholder="1. Agbaje v Commissioner of Police (1969) 1 NMLR 137\n2. https://www.courtofappeal.gov.ng/History", label_visibility="collapsed")
 
 st.write("")
