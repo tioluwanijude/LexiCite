@@ -3,7 +3,6 @@ import os
 import subprocess
 import urllib.request
 import re
-import base64
 
 # ==========================================
 # 1. THE LOCAL HEURISTIC PARSER (Backend)
@@ -93,17 +92,9 @@ class LexiCiteEngine:
                 if os.path.exists(f): os.remove(f)
 
 # ==========================================
-# 3. HELPER: IMAGE CONVERTER
+# 3. THE FRONTEND UI & UX
 # ==========================================
-def get_base64_of_bin_file(bin_file):
-    with open(bin_file, 'rb') as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
-
-# ==========================================
-# 4. THE FRONTEND UI & UX
-# ==========================================
-# FIX: The page_icon is now pointing to your logo file instead of the scale emoji!
+# The page_icon remains "LexiCite.png" so it shows up in the browser tab!
 st.set_page_config(page_title="LexiCite Engine", page_icon="LexiCite.png", layout="wide")
 
 # Theme-Aware Styling
@@ -126,30 +117,25 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 8px 15px rgba(59, 130, 246, 0.3);
     }
+    
+    .main-title {
+        font-weight: 800; 
+        font-size: 4rem; 
+        margin: 0; 
+        padding: 0; 
+        line-height: 1.1; 
+        background: linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%); 
+        -webkit-background-clip: text; 
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 2.5rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ------------------------------------------
-# Custom Header (Perfect Alignment & Contrast)
+# Clean Title
 # ------------------------------------------
-header_html = ""
-if os.path.exists("LexiCite.png"):
-    img_b64 = get_base64_of_bin_file("LexiCite.png")
-    header_html = f"""
-    <div style="display: flex; align-items: center; gap: 25px; margin-bottom: 2.5rem;">
-        <div style="background-color: white; padding: 15px; border-radius: 18px; width: 100px; height: 100px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
-            <img src="data:image/png;base64,{img_b64}" style="max-width: 100%; max-height: 100%; object-fit: contain;">
-        </div>
-        <div style="display: flex; flex-direction: column; justify-content: center;">
-            <h1 style="font-weight: 800; font-size: 3.8rem; margin: 0; padding: 0; line-height: 1.1; background: linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">LexiCite</h1>
-            <span style="color: #94a3b8; font-size: 1.2rem; font-weight: 500; margin-top: 8px;">The 100% Offline, Privacy-First OSCOLA Engine</span>
-        </div>
-    </div>
-    """
-else:
-    header_html = "<h1 style='font-size: 4rem; margin-bottom: 2rem;'>⚖️ LexiCite</h1>"
-
-st.markdown(header_html, unsafe_allow_html=True)
+st.markdown('<h1 class="main-title">LexiCite</h1>', unsafe_allow_html=True)
 
 # ------------------------------------------
 # Quick Guide
@@ -161,8 +147,6 @@ with st.expander("📖 How to use LexiCite", expanded=False):
     **Step 3:** Paste your list of sources in the exact order they appear in your text.  
     **Step 4:** Click Compile! LexiCite will map the sources, apply OSCOLA rules, and format your document.
     """)
-
-st.write("")
 
 # ------------------------------------------
 # Main Application Workspace
