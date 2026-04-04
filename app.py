@@ -9,61 +9,42 @@ import re
 # ==========================================
 class LexiCiteParser:
     def __init__(self):
-        # 100% Local, Offline Engine. No APIs required.
         pass
 
     def generate_bibtex(self, source_list):
-        """
-        Uses Advanced Regular Expressions to parse human-readable lists into valid BibTeX.
-        """
         lines = [line.strip() for line in source_list.split('\n') if line.strip()]
         bibtex_output = ""
 
         for i, line in enumerate(lines):
             source_id = f"source{i+1}"
-
-            # 1. Strip leading numbers or bullets (e.g., "1. ", "2) ", "- ")
             clean_line = re.sub(r'^[\d\.\-\)\s]+', '', line).strip()
 
-            # 2. Extract the URL (OSCOLA strict compliance)
             url_match = re.search(r'(https?://[^\s]+|www\.[^\s]+)', clean_line, re.IGNORECASE)
             url = url_match.group(1).rstrip('.,') if url_match else ""
             
             if url:
-                # Remove the URL from the main title string
                 clean_line = clean_line.replace(url_match.group(0), "").strip()
-                # Clean up stray 'Accessed' words left behind by raw copy/pasting
                 clean_line = re.sub(r',?\s*Accessed\s+[A-Za-z0-9\s\,]+(?:$|,)', '', clean_line, flags=re.IGNORECASE).strip()
 
-            # 3. Extract the year (Looks for 4 digits inside () or [])
             year_match = re.search(r'[\(\[](\d{4})[\)\]]', clean_line)
             year = year_match.group(1) if year_match else ""
-
-            # Clean trailing punctuation from the title
             clean_line = clean_line.rstrip(',. ')
 
-            # 4. Categorize based on legal keywords
             if ' v ' in clean_line.lower() or ' v. ' in clean_line.lower():
                 entry_type = "jurisdiction"
-                
             elif "'" in clean_line or '"' in clean_line:
-                # It is likely an Article. Strip the quotes so Pandoc doesn't double-quote them.
                 clean_line = clean_line.replace("'", "").replace('"', '')
                 entry_type = "article"
-                
             else:
                 entry_type = "book"
 
-            # 5. Build the BibTeX Entry
             bibtex_entry = f"@{entry_type}{{{source_id},\n  title = {{{clean_line}}},\n  year = {{{year}}}"
             if url:
                 bibtex_entry += f",\n  url = {{{url}}}"
             bibtex_entry += "\n}\n\n"
-
             bibtex_output += bibtex_entry
 
         return bibtex_output
-
 
 # ==========================================
 # 2. THE OSCOLA ENGINE (Backend)
@@ -74,7 +55,6 @@ class LexiCiteEngine:
         self._ensure_csl(csl_url)
 
     def _ensure_csl(self, url):
-        """Downloads the official OSCOLA ruleset if missing."""
         if not os.path.exists(self.csl_filename):
             urllib.request.urlretrieve(url, self.csl_filename)
 
@@ -96,19 +76,15 @@ class LexiCiteEngine:
 
             for num in sorted_nums:
                 marker = f"[^{num}]"
-                # Find all variations of footnotes and normalize them to markdown footnotes
                 md_text = md_text.replace(self._to_unicode_super(num), marker)
                 md_text = re.sub(r'\\?\[\s*' + num + r'\s*\\?\]', marker, md_text)
                 md_text = re.sub(r'\(\s*' + num + r'\s*\)', marker, md_text)
                 md_text = re.sub(r'\^\s*' + num + r'\s*\^', marker, md_text)
-                
-                # Append the mapping link to the bottom of the document
                 footnote_appendix += f"[^{num}]: [@source{num}]\n\n"
 
             md_text += footnote_appendix
             with open(md_file, "w", encoding="utf-8") as f: f.write(md_text)
 
-            # Fire the Pandoc CSL processor
             subprocess.run(["pandoc", md_file, "--citeproc", f"--bibliography={bib_file}", f"--csl={self.csl_filename}", "-M", "suppress-bibliography=true", "-o", output_docx], check=True)
             return output_docx
         finally:
@@ -118,95 +94,115 @@ class LexiCiteEngine:
 # ==========================================
 # 3. THE FRONTEND UI & UX
 # ==========================================
-st.set_page_config(page_title="LexiCite | OSCOLA Engine", page_icon="⚖️", layout="wide")
+st.set_page_config(page_title="LexiCite Engine", page_icon="⚖️", layout="wide")
 
-# Modern UI Styling
+# Theme-Aware Styling
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; }
     
+    /* Clean up default Streamlit padding */
+    .block-container { padding-top: 3rem; max-width: 1000px; }
+    
+    /* Dynamic gradient that looks gorgeous on dark and light mode */
     .main-title { 
         font-weight: 800; 
-        font-size: 3.2rem; 
+        font-size: 4rem; 
         letter-spacing: -0.03em;
-        background: linear-gradient(135deg, #0F172A 0%, #3B82F6 100%); 
+        background: linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%); 
         -webkit-background-clip: text; 
         -webkit-text-fill-color: transparent; 
-        margin-bottom: 0px;
+        margin-bottom: -10px;
     }
     
-    .stButton>button[kind="primary"] { 
-        background: #0F172A; 
-        color: white; 
-        border-radius: 8px; 
-        width: 100%; 
-        font-weight: 600; 
-        padding: 0.75rem;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-    }
-    
-    .stButton>button[kind="primary"]:hover {
-        background: #1E293B;
-        transform: translateY(-2px);
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-    }
-    
-    .info-box {
-        background-color: #F8FAFC;
-        border-left: 4px solid #3B82F6;
-        padding: 1rem;
-        border-radius: 0 8px 8px 0;
+    .subtitle {
+        font-size: 1.25rem; 
+        opacity: 0.8; 
+        font-weight: 500;
         margin-bottom: 2rem;
+    }
+
+    /* Modern Button Styling */
+    .stButton>button[kind="primary"] { 
+        font-weight: 700; 
+        border-radius: 8px; 
+        padding: 0.75rem 2rem;
+        transition: all 0.3s ease;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    .stButton>button[kind="primary"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 15px rgba(59, 130, 246, 0.3);
+    }
+    
+    /* Responsive Logo for Desktop */
+    .logo-container img {
+        border-radius: 16px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        margin-top: 15px;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Header Section
-col_logo, col_text = st.columns([1, 9])
+# ------------------------------------------
+# Desktop/Mobile Native Header
+# ------------------------------------------
+col_logo, col_text = st.columns([1.5, 8.5])
+
 with col_logo:
+    st.markdown('<div class="logo-container">', unsafe_allow_html=True)
     if os.path.exists("LexiCite.jpg"):
         st.image("LexiCite.jpg", use_container_width=True)
     else:
-        st.markdown("<h1 style='font-size: 3rem;'>⚖️</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='font-size: 4rem;'>⚖️</h1>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 with col_text:
-    st.markdown("<div class='main-title'>LexiCite OSCOLA Engine</div>", unsafe_allow_html=True)
-    st.markdown("<p style='color: #64748b; font-size: 1.1rem; font-weight: 500;'>The 100% Offline, Privacy-First Legal Formatting Tool</p>", unsafe_allow_html=True)
+    st.markdown("<h1 class='main-title'>LexiCite</h1>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle'>The 100% Offline, Privacy-First OSCOLA Engine</p>", unsafe_allow_html=True)
 
 st.write("---")
 
-# Quick Guide
-with st.expander("📖 How to use LexiCite"):
-    st.markdown("""
-    <div class='info-box'>
-        <strong>Step 1:</strong> Type your draft in Word and use numbers in brackets <b>[1]</b> or superscripts <b>¹</b> for your footnotes.<br>
-        <strong>Step 2:</strong> Upload that Word document here.<br>
-        <strong>Step 3:</strong> Paste your list of sources in the exact order they appear in your text.<br>
-        <strong>Step 4:</strong> Click Compile. LexiCite will map the sources, apply strict OSCOLA rules, and generate a formatted document.
-    </div>
-    """, unsafe_allow_html=True)
+# ------------------------------------------
+# Quick Guide (Now Theme-Aware!)
+# ------------------------------------------
+with st.expander("📖 How to use LexiCite", expanded=False):
+    # Using st.info natively adapts to Dark/Light mode! No more ugly white boxes.
+    st.info("""
+    **Step 1:** Draft your document in Word. Use bracketed numbers **[1]** or superscripts **¹** for your footnotes.  
+    **Step 2:** Upload that Word document below.  
+    **Step 3:** Paste your list of sources in the exact order they appear in your text.  
+    **Step 4:** Click Compile! LexiCite will map the sources, apply OSCOLA rules, and format your document.
+    """)
 
+st.write("")
+
+# ------------------------------------------
 # Main Application Workspace
-col1, col2 = st.columns([1, 1], gap="large")
+# ------------------------------------------
+col1, col2 = st.columns(2, gap="large")
 
 with col1:
     with st.container(border=True):
         st.markdown("### 📄 1. Upload Draft")
         st.caption("Upload your Microsoft Word document (.docx) containing your unformatted text.")
+        st.write("") # Spacer
         uploaded_file = st.file_uploader("Word Document", type=["docx"], label_visibility="collapsed")
 
 with col2:
     with st.container(border=True):
         st.markdown("### 📚 2. Paste Sources")
         st.caption("Paste your list in order. Ensure cases have 'v' and web sources include the URL.")
-        source_list = st.text_area("Numbered List", height=150, placeholder="1. Agbaje v Commissioner of Police (1969) 1 NMLR 137\n2. https://www.courtofappeal.gov.ng/History")
+        source_list = st.text_area("Numbered List", height=150, placeholder="1. Agbaje v Commissioner of Police (1969) 1 NMLR 137\n2. https://www.courtofappeal.gov.ng/History", label_visibility="collapsed")
 
 st.write("")
 st.write("")
 
+# ------------------------------------------
 # Generation Zone
+# ------------------------------------------
 col_empty1, col_center, col_empty2 = st.columns([1, 2, 1])
 
 with col_center:
@@ -214,10 +210,10 @@ with col_center:
         if not uploaded_file or not source_list.strip():
             st.error("⚠️ Please upload a document and paste your sources to proceed.")
         else:
-            with st.status("Initializing Local Engine...", expanded=True) as status:
+            with st.status("Initializing Engine...", expanded=True) as status:
                 try:
-                    # 1. Parse Data Locally
-                    st.write("🔍 Parsing sources using local heuristics...")
+                    # 1. Parse Data
+                    st.write("🔍 Parsing sources using heuristics...")
                     parser = LexiCiteParser()
                     bib_data = parser.generate_bibtex(source_list)
                     num_sources = len([l for l in source_list.split('\n') if l.strip()])
@@ -233,7 +229,6 @@ with col_center:
                     st.success("✅ Document formatted successfully!")
                     st.balloons()
 
-                    # Provide Download Button Prominently
                     with open(final_path, "rb") as f:
                         st.download_button(
                             label="📥 DOWNLOAD FORMATTED .DOCX", 
@@ -243,7 +238,6 @@ with col_center:
                             type="primary"
                         )
                         
-                    # Developer tools hidden in expander
                     with st.expander("🛠️ View System-Generated Data (For Debugging)"):
                         st.code(bib_data, language="bibtex")
 
