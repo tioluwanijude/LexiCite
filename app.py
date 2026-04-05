@@ -18,24 +18,33 @@ class LexiCiteParser:
         for i, line in enumerate(lines):
             source_id = f"source{i+1}"
             
+            # 1. Strip leading numbers/bullets
             clean_line = re.sub(r'^[\d\.\-\)\s]+', '', line).strip()
+
+            # 2. NALT RULE (Pg 71): Omit titles, prefixes, and post-nominals
             nalt_titles = r'\b(Mr\.|Mrs\.|Dr\.|Dr|Prof\.|Professor|Hon\.|Honourable|Justice|Rev\.|Bishop|Alhaji|Hajiya|Chief|SAN|OFR|OON|GCON)\b\,?'
             clean_line = re.sub(nalt_titles, '', clean_line, flags=re.IGNORECASE)
             
+            # 3. NALT RULE (Pg 81): Exterminate Banned Latin Expressions
             banned_latin = r'\b(supra|infra|ante|contra|id\.|op\.?\s*cit\.?|loc\.?\s*cit\.?|passim|et\s*seq\.?)\b'
             clean_line = re.sub(banned_latin, '', clean_line, flags=re.IGNORECASE)
 
+            # 4. NALT RULE (Pg 59 & 67): No full stops in abbreviations & unpunctuated 'v'
             clean_line = re.sub(r'\s+v\.?\s+', ' v ', clean_line, flags=re.IGNORECASE)
+            # Scrubber for dotted acronyms (e.g., N.W.L.R. -> NWLR)
             clean_line = re.sub(r'\b([A-Z])\.(?:[A-Z]\.)+', lambda m: m.group(0).replace('.', ''), clean_line)
             
+            # 5. NALT RULE (Pg 63): Section and Part abbreviations
             clean_line = re.sub(r'\bSections\b', 'ss', clean_line, flags=re.IGNORECASE)
             clean_line = re.sub(r'\bSection\b', 's', clean_line, flags=re.IGNORECASE)
             clean_line = re.sub(r'\bParts\b', 'pts', clean_line, flags=re.IGNORECASE)
             clean_line = re.sub(r'\bPart\b', 'pt', clean_line, flags=re.IGNORECASE)
 
+            # Cleanup double spaces or stray commas left by scrubbers
             clean_line = re.sub(r',\s*,', ',', clean_line)
             clean_line = re.sub(r'\s+', ' ', clean_line).strip()
 
+            # 6. Extract URL
             url_match = re.search(r'(https?://[^\s]+|www\.[^\s]+)', clean_line, re.IGNORECASE)
             url = url_match.group(1).rstrip('.,') if url_match else ""
             
@@ -43,10 +52,12 @@ class LexiCiteParser:
                 clean_line = clean_line.replace(url_match.group(0), "").strip()
                 clean_line = re.sub(r',?\s*Accessed\s+[A-Za-z0-9\s\,]+(?:$|,)', '', clean_line, flags=re.IGNORECASE).strip()
 
+            # 7. Extract Year
             year_match = re.search(r'[\(\[](\d{4})[\)\]]', clean_line)
             year = year_match.group(1) if year_match else ""
             clean_line = clean_line.rstrip(',. ')
 
+            # 8. NALT CATEGORIZATION ENGINE
             clean_lower = clean_line.lower()
             
             if re.search(r'\s+v\s+|^re\s+|^ex\s+parte\s+', clean_lower):
@@ -65,6 +76,7 @@ class LexiCiteParser:
             else:
                 entry_type = "book"
 
+            # 9. Build BibTeX
             bibtex_entry = f"@{entry_type}{{{source_id},\n  title = {{{clean_line}}},\n  year = {{{year}}}"
             if url:
                 bibtex_entry += f",\n  url = {{{url}}}"
@@ -133,7 +145,7 @@ class LexiCiteEngine:
 # ==========================================
 st.set_page_config(page_title="LexiCite | NALT", page_icon="⚡", layout="wide")
 
-# --- LIQUID GLASS & DARK PREMIUM CSS ---
+# --- CLEANED LIQUID GLASS & DARK PREMIUM CSS ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500&family=Instrument+Serif:ital@0;1&display=swap');
@@ -141,17 +153,16 @@ st.markdown("""
     /* Global App Background */
     .stApp {
         background-color: #050505 !important;
-        background-image: radial-gradient(circle at 50% 0%, rgba(255,255,255,0.05) 0%, transparent 70%);
+        background-image: radial-gradient(circle at 50% 0%, rgba(255,255,255,0.04) 0%, transparent 70%);
     }
     
-    html, body, [class*="css"], p, span, label { 
+    /* Safe Typography Overrides (Avoids breaking Streamlit icons) */
+    html, body, p, .stMarkdown, .stText { 
         font-family: 'Barlow', sans-serif !important; 
-        color: rgba(255, 255, 255, 0.6) !important;
-        font-weight: 300;
     }
     
     /* Instrument Serif Headings */
-    h1, h2, h3, .markdown-text-container h1, .markdown-text-container h2, .markdown-text-container h3 {
+    h1, h2, h3, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
         font-family: 'Instrument Serif', serif !important;
         font-style: italic !important;
         color: #FFFFFF !important;
@@ -160,7 +171,7 @@ st.markdown("""
     }
 
     /* LIQUID GLASS CONTAINERS */
-    [data-testid="stVerticalBlockBorderWrapper"], .stTextArea textarea, [data-testid="stFileUploadDropzone"] {
+    [data-testid="stVerticalBlockBorderWrapper"], .stTextArea textarea {
         background: rgba(255, 255, 255, 0.02) !important;
         backdrop-filter: blur(16px) !important;
         -webkit-backdrop-filter: blur(16px) !important;
@@ -201,7 +212,7 @@ st.markdown("""
     header, footer { visibility: hidden !important; }
     .block-container { padding-top: 3rem; max-width: 1100px; }
 
-    /* Custom Header Styles */
+    /* Custom Header Styles with Glowing Glass Effect */
     .hero-container {
         text-align: center;
         margin-bottom: 4rem;
@@ -223,11 +234,19 @@ st.markdown("""
         font-family: 'Instrument Serif', serif;
         font-style: italic;
         font-size: 5.5rem;
-        color: #FFFFFF;
         line-height: 0.9;
         letter-spacing: -0.02em;
         margin-bottom: 1rem;
+        user-select: none;
     }
+    .brand-lexi { color: #FFFFFF; }
+    .brand-cite {
+        background: linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        filter: drop-shadow(0px 0px 15px rgba(139, 92, 246, 0.5)); /* The Glowing Effect */
+    }
+    .brand-dot { color: #3B82F6; }
     .hero-subtitle {
         font-family: 'Barlow', sans-serif;
         font-size: 1.1rem;
@@ -239,12 +258,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ------------------------------------------
-# HERO SECTION (Apple/Agency Inspired)
+# HERO SECTION (Glowing Agency Inspired)
 # ------------------------------------------
 st.markdown("""
 <div class="hero-container">
     <div class="hero-badge">NALT Engine 2.0</div>
-    <div class="hero-title">LexiCite.</div>
+    <div class="hero-title"><span class="brand-lexi">Lexi</span><span class="brand-cite">Cite</span><span class="brand-dot">.</span></div>
     <div class="hero-subtitle">Pro features. Zero complexity. The aesthetic legal formatting engine built exclusively for Nigerian scholars.</div>
 </div>
 """, unsafe_allow_html=True)
@@ -257,7 +276,7 @@ col1, col2 = st.columns(2, gap="large")
 with col1:
     with st.container(border=True):
         st.markdown("### 01. The Draft")
-        st.markdown("<p style='font-size: 0.9rem; margin-bottom: 1rem;'>Upload your unformatted .docx file. Ensure footnotes are marked with brackets [1] or superscripts ¹.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.9rem; margin-bottom: 1rem; color: rgba(255,255,255,0.6);'>Upload your unformatted .docx file. Ensure footnotes are marked with brackets [1] or superscripts ¹.</p>", unsafe_allow_html=True)
         uploaded_file = st.file_uploader("Upload", type=["docx"], label_visibility="collapsed")
         st.write("")
         generate_bib = st.checkbox("Append NALT Bibliography", value=True)
@@ -265,7 +284,7 @@ with col1:
 with col2:
     with st.container(border=True):
         st.markdown("### 02. The Sources")
-        st.markdown("<p style='font-size: 0.9rem; margin-bottom: 1rem;'>Paste your numbered list. Our engine automatically scrubs banned Latin and standardizes abbreviations.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.9rem; margin-bottom: 1rem; color: rgba(255,255,255,0.6);'>Paste your numbered list. Our engine automatically scrubs banned Latin and standardizes abbreviations.</p>", unsafe_allow_html=True)
         source_list = st.text_area("Sources", height=200, placeholder="1. Prof. Abacha v. Fawehinmi [2000] FWLR (Pt 4) 533\n2. Electoral Act 2022\n3. https://www.courtofappeal.gov.ng/History", label_visibility="collapsed")
 
 st.write("")
