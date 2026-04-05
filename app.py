@@ -18,33 +18,24 @@ class LexiCiteParser:
         for i, line in enumerate(lines):
             source_id = f"source{i+1}"
             
-            # 1. Strip leading numbers/bullets
             clean_line = re.sub(r'^[\d\.\-\)\s]+', '', line).strip()
-
-            # 2. NALT RULE (Pg 71): Omit titles, prefixes, and post-nominals
             nalt_titles = r'\b(Mr\.|Mrs\.|Dr\.|Dr|Prof\.|Professor|Hon\.|Honourable|Justice|Rev\.|Bishop|Alhaji|Hajiya|Chief|SAN|OFR|OON|GCON)\b\,?'
             clean_line = re.sub(nalt_titles, '', clean_line, flags=re.IGNORECASE)
             
-            # 3. NALT RULE (Pg 81): Exterminate Banned Latin Expressions
             banned_latin = r'\b(supra|infra|ante|contra|id\.|op\.?\s*cit\.?|loc\.?\s*cit\.?|passim|et\s*seq\.?)\b'
             clean_line = re.sub(banned_latin, '', clean_line, flags=re.IGNORECASE)
 
-            # 4. NALT RULE (Pg 59 & 67): No full stops in abbreviations & unpunctuated 'v'
             clean_line = re.sub(r'\s+v\.?\s+', ' v ', clean_line, flags=re.IGNORECASE)
-            # Scrubber for dotted acronyms (e.g., N.W.L.R. -> NWLR)
             clean_line = re.sub(r'\b([A-Z])\.(?:[A-Z]\.)+', lambda m: m.group(0).replace('.', ''), clean_line)
             
-            # 5. NALT RULE (Pg 63): Section and Part abbreviations
             clean_line = re.sub(r'\bSections\b', 'ss', clean_line, flags=re.IGNORECASE)
             clean_line = re.sub(r'\bSection\b', 's', clean_line, flags=re.IGNORECASE)
             clean_line = re.sub(r'\bParts\b', 'pts', clean_line, flags=re.IGNORECASE)
             clean_line = re.sub(r'\bPart\b', 'pt', clean_line, flags=re.IGNORECASE)
 
-            # Cleanup double spaces or stray commas left by scrubbers
             clean_line = re.sub(r',\s*,', ',', clean_line)
             clean_line = re.sub(r'\s+', ' ', clean_line).strip()
 
-            # 6. Extract URL
             url_match = re.search(r'(https?://[^\s]+|www\.[^\s]+)', clean_line, re.IGNORECASE)
             url = url_match.group(1).rstrip('.,') if url_match else ""
             
@@ -52,12 +43,10 @@ class LexiCiteParser:
                 clean_line = clean_line.replace(url_match.group(0), "").strip()
                 clean_line = re.sub(r',?\s*Accessed\s+[A-Za-z0-9\s\,]+(?:$|,)', '', clean_line, flags=re.IGNORECASE).strip()
 
-            # 7. Extract Year
             year_match = re.search(r'[\(\[](\d{4})[\)\]]', clean_line)
             year = year_match.group(1) if year_match else ""
             clean_line = clean_line.rstrip(',. ')
 
-            # 8. NALT CATEGORIZATION ENGINE
             clean_lower = clean_line.lower()
             
             if re.search(r'\s+v\s+|^re\s+|^ex\s+parte\s+', clean_lower):
@@ -76,7 +65,6 @@ class LexiCiteParser:
             else:
                 entry_type = "book"
 
-            # 9. Build BibTeX
             bibtex_entry = f"@{entry_type}{{{source_id},\n  title = {{{clean_line}}},\n  year = {{{year}}}"
             if url:
                 bibtex_entry += f",\n  url = {{{url}}}"
@@ -124,7 +112,6 @@ class LexiCiteEngine:
 
             md_text += footnote_appendix
             
-            # --- NALT BIBLIOGRAPHY GENERATION ---
             if generate_bib:
                 md_text += "\n\n<br><br>\n\n# BIBLIOGRAPHY\n\n"
                 
@@ -144,150 +131,153 @@ class LexiCiteEngine:
 # ==========================================
 # 3. THE FRONTEND UI & UX
 # ==========================================
-st.set_page_config(page_title="LexiCite | NALT Engine", page_icon="LexiCite.png", layout="wide")
+st.set_page_config(page_title="LexiCite | NALT", page_icon="⚡", layout="wide")
 
-# Theme-Aware Styling inspired by Fintech Dashboards (Stripe/Linear)
+# --- LIQUID GLASS & DARK PREMIUM CSS ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500&family=Instrument+Serif:ital@0;1&display=swap');
     
-    html, body, [class*="css"] { 
-        font-family: 'Inter', sans-serif; 
-        color: #475569; 
+    /* Global App Background */
+    .stApp {
+        background-color: #050505 !important;
+        background-image: radial-gradient(circle at 50% 0%, rgba(255,255,255,0.05) 0%, transparent 70%);
     }
     
-    /* Typography Overrides */
-    h1, h2, h3, h4, h5, h6, .markdown-text-container h1, .markdown-text-container h2, .markdown-text-container h3 {
-        font-weight: 800 !important;
-        letter-spacing: -0.04em !important;
-        color: #0F172A !important;
+    html, body, [class*="css"], p, span, label { 
+        font-family: 'Barlow', sans-serif !important; 
+        color: rgba(255, 255, 255, 0.6) !important;
+        font-weight: 300;
     }
     
-    p, .markdown-text-container p {
-        font-weight: 400;
-        line-height: 1.6;
-        color: #475569;
-    }
-    
-    .block-container { padding-top: 2rem; max-width: 1000px; }
-
-    /* Custom Flexbox Header */
-    .custom-header {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 15vh;
-        margin-bottom: 3rem;
-    }
-    
-    .brand-logo {
-        font-weight: 800; 
-        font-size: 4rem; 
-        letter-spacing: -0.05em; 
-        margin: 0;
-        line-height: 1;
-        user-select: none; 
-    }
-    
-    .brand-lexi { color: #0F172A; }
-    .brand-cite { color: #2563EB; }
-    
-    .header-subtitle {
-        color: #64748B;
-        font-size: 1.1rem;
-        font-weight: 500;
-        margin-top: 0.5rem;
+    /* Instrument Serif Headings */
+    h1, h2, h3, .markdown-text-container h1, .markdown-text-container h2, .markdown-text-container h3 {
+        font-family: 'Instrument Serif', serif !important;
+        font-style: italic !important;
+        color: #FFFFFF !important;
+        letter-spacing: -0.02em !important;
+        font-weight: 400 !important;
     }
 
-    /* Container Styling */
-    [data-testid="stVerticalBlockBorderWrapper"] {
-        border-radius: 12px !important;
-        border: 1px solid #E2E8F0 !important;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05) !important;
-        background-color: #FFFFFF;
+    /* LIQUID GLASS CONTAINERS */
+    [data-testid="stVerticalBlockBorderWrapper"], .stTextArea textarea, [data-testid="stFileUploadDropzone"] {
+        background: rgba(255, 255, 255, 0.02) !important;
+        backdrop-filter: blur(16px) !important;
+        -webkit-backdrop-filter: blur(16px) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        border-radius: 16px !important;
+        box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.05) !important;
+        color: #FFFFFF !important;
+        transition: all 0.3s ease;
+    }
+    
+    [data-testid="stVerticalBlockBorderWrapper"]:hover {
+        border: 1px solid rgba(255, 255, 255, 0.15) !important;
     }
 
-    /* Primary Compile Button */
-    .stButton>button[kind="primary"] { 
+    /* LIQUID GLASS STRONG BUTTONS */
+    .stButton>button[kind="primary"], .stDownloadButton>button { 
+        background: rgba(255, 255, 255, 0.05) !important;
+        backdrop-filter: blur(50px) !important;
+        -webkit-backdrop-filter: blur(50px) !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        color: #FFFFFF !important;
         border-radius: 9999px !important; 
-        background-color: #2563EB !important;
-        color: white !important;
-        font-weight: 600 !important; 
+        font-family: 'Barlow', sans-serif !important;
+        font-weight: 500 !important;
         padding: 0.75rem 2.5rem !important;
-        transition: all 0.3s ease !important;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        border: none !important;
+        transition: all 0.4s ease !important;
+        box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 4px 10px rgba(0,0,0,0.3) !important;
         width: 100%;
     }
-    .stButton>button[kind="primary"]:hover {
+    .stButton>button[kind="primary"]:hover, .stDownloadButton>button:hover {
+        background: rgba(255, 255, 255, 0.1) !important;
         transform: translateY(-2px) !important;
-        box-shadow: 0 8px 15px rgba(37, 99, 235, 0.3) !important;
-        background-color: #1D4ED8 !important;
+        border: 1px solid rgba(255, 255, 255, 0.4) !important;
+        box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2), 0 0 20px rgba(255, 255, 255, 0.1) !important;
     }
 
-    /* Download Button (Outlined Pill) */
-    .stDownloadButton>button {
-        border-radius: 9999px !important;
-        border: 2px solid #2563EB !important;
-        color: #2563EB !important;
-        background-color: transparent !important;
-        font-weight: 600 !important;
-        width: 100% !important;
-        transition: all 0.3s ease !important;
+    /* Hide redundant elements */
+    header, footer { visibility: hidden !important; }
+    .block-container { padding-top: 3rem; max-width: 1100px; }
+
+    /* Custom Header Styles */
+    .hero-container {
+        text-align: center;
+        margin-bottom: 4rem;
+        padding-top: 2rem;
+    }
+    .hero-badge {
+        display: inline-block;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 6px 16px;
+        border-radius: 9999px;
+        font-size: 0.75rem;
         text-transform: uppercase;
         letter-spacing: 1px;
-        padding: 0.75rem 2rem !important;
+        color: rgba(255, 255, 255, 0.8);
+        margin-bottom: 1.5rem;
     }
-    .stDownloadButton>button:hover {
-        background-color: #EFF6FF !important;
-        transform: translateY(-2px) !important;
-        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15) !important;
+    .hero-title {
+        font-family: 'Instrument Serif', serif;
+        font-style: italic;
+        font-size: 5.5rem;
+        color: #FFFFFF;
+        line-height: 0.9;
+        letter-spacing: -0.02em;
+        margin-bottom: 1rem;
     }
-    
-    /* Hide default uploader icon/text for sleekness */
-    [data-testid="stFileUploadDropzone"] {
-        border-radius: 8px !important;
-        border: 1px dashed #CBD5E1 !important;
-        background-color: #F8FAFC !important;
+    .hero-subtitle {
+        font-family: 'Barlow', sans-serif;
+        font-size: 1.1rem;
+        color: rgba(255, 255, 255, 0.5);
+        max-width: 500px;
+        margin: 0 auto;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# 1. The Header (Top 15vh)
+# ------------------------------------------
+# HERO SECTION (Apple/Agency Inspired)
+# ------------------------------------------
 st.markdown("""
-<div class="custom-header">
-    <h1 class="brand-logo"><span class="brand-lexi">Lexi</span><span class="brand-cite">Cite</span></h1>
-    <div class="header-subtitle">The NALT Engine for Legal Scholars.</div>
+<div class="hero-container">
+    <div class="hero-badge">NALT Engine 2.0</div>
+    <div class="hero-title">LexiCite.</div>
+    <div class="hero-subtitle">Pro features. Zero complexity. The aesthetic legal formatting engine built exclusively for Nigerian scholars.</div>
 </div>
 """, unsafe_allow_html=True)
 
-# 2. The Workspace (Two Columns)
+# ------------------------------------------
+# WORKSPACE (Grid Layout)
+# ------------------------------------------
 col1, col2 = st.columns(2, gap="large")
 
 with col1:
     with st.container(border=True):
-        st.markdown("### 1. Upload Draft")
-        st.markdown("<p style='font-size: 0.9rem; margin-bottom: 1rem;'>Upload your .docx file with bracketed [1] or superscript ¹ footnotes.</p>", unsafe_allow_html=True)
+        st.markdown("### 01. The Draft")
+        st.markdown("<p style='font-size: 0.9rem; margin-bottom: 1rem;'>Upload your unformatted .docx file. Ensure footnotes are marked with brackets [1] or superscripts ¹.</p>", unsafe_allow_html=True)
         uploaded_file = st.file_uploader("Upload", type=["docx"], label_visibility="collapsed")
         st.write("")
-        generate_bib = st.checkbox("Append NALT Bibliography to document", value=True)
+        generate_bib = st.checkbox("Append NALT Bibliography", value=True)
 
 with col2:
     with st.container(border=True):
-        st.markdown("### 2. Paste Sources")
-        st.markdown("<p style='font-size: 0.9rem; margin-bottom: 1rem;'>Paste your numbered list. The NALT engine will scrub and format them.</p>", unsafe_allow_html=True)
-        source_list = st.text_area("Sources", height=300, placeholder="1. Prof. Abacha v. Fawehinmi [2000] FWLR (Pt 4) 533\n2. Electoral Act 2022\n3. https://www.courtofappeal.gov.ng/History", label_visibility="collapsed")
+        st.markdown("### 02. The Sources")
+        st.markdown("<p style='font-size: 0.9rem; margin-bottom: 1rem;'>Paste your numbered list. Our engine automatically scrubs banned Latin and standardizes abbreviations.</p>", unsafe_allow_html=True)
+        source_list = st.text_area("Sources", height=200, placeholder="1. Prof. Abacha v. Fawehinmi [2000] FWLR (Pt 4) 533\n2. Electoral Act 2022\n3. https://www.courtofappeal.gov.ng/History", label_visibility="collapsed")
 
 st.write("")
 st.write("")
 
-# 3. The Action Zone (Bottom Center)
+# ------------------------------------------
+# ACTION CTA
+# ------------------------------------------
 col_empty1, col_center, col_empty2 = st.columns([1, 2, 1])
 
 with col_center:
-    if st.button("⚡ Parse & Compile", type="primary"):
+    if st.button("Initialize Compilation", type="primary"):
         if not uploaded_file:
             st.error("⚠️ Please upload a Word document (.docx) to proceed.")
         elif not uploaded_file.name.endswith(".docx"):
@@ -297,38 +287,37 @@ with col_center:
         elif not source_list.strip():
             st.error("⚠️ Please paste your sources to proceed.")
         else:
-            with st.status("Analyzing Jurisprudence...", expanded=True) as status:
+            with st.status("Reconstructing Jurisprudence...", expanded=True) as status:
                 try:
-                    st.write("🔍 Scrubbing titles, banned Latin, and classifying sources...")
+                    st.write("🔍 Sanitizing syntax & classifying sources...")
                     parser = LexiCiteParser()
                     bib_data = parser.generate_bibtex(source_list)
                     num_sources = len([l for l in source_list.split('\n') if l.strip()])
 
-                    st.write("⚙️ Applying NALT Formatting & Cross-References...")
+                    st.write("⚙️ Applying strict NALT formatting rules...")
                     engine = LexiCiteEngine()
                     final_path = engine.format_document(uploaded_file.getbuffer(), bib_data, num_sources, generate_bib)
                     
-                    status.update(label="Compilation Complete!", state="complete")
+                    status.update(label="Compilation Complete.", state="complete")
                     
-                    # Premium Micro-Interactions
                     st.balloons()
                     st.markdown("""
-                        <div style="background-color: #F0FDF4; border: 1px solid #BBF7D0; color: #166534; padding: 1rem; border-radius: 12px; font-weight: 500; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                            <span style="font-size: 1.2rem;">✅</span> NALT Document formatted successfully!
+                        <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 1rem; border-radius: 12px; text-align: center; margin-bottom: 1.5rem; backdrop-filter: blur(10px);">
+                            <i>Document has been perfectly formatted to NALT standards.</i>
                         </div>
                     """, unsafe_allow_html=True)
 
                     with open(final_path, "rb") as f:
                         st.download_button(
-                            label="Download Formatted .DOCX", 
+                            label="Download .DOCX", 
                             data=f, 
                             file_name="LexiCite_NALT_Formatted.docx", 
                             use_container_width=True
                         )
                         
-                    with st.expander("🛠️ View System-Generated Data (For Debugging)"):
+                    with st.expander("View Backend Trace (BibTeX)"):
                         st.code(bib_data, language="bibtex")
 
                 except Exception as e:
-                    status.update(label="System Error Occurred", state="error", expanded=True)
+                    status.update(label="System Error", state="error", expanded=True)
                     st.error(f"Error: {e}")
