@@ -236,7 +236,7 @@ st.markdown("""
         font-size: 5.5rem;
         line-height: 0.9;
         letter-spacing: -0.02em;
-        margin-bottom: 1rem;
+        margin-bottom: 1.5rem;
         user-select: none;
     }
     .brand-lexi { color: #FFFFFF; }
@@ -244,27 +244,33 @@ st.markdown("""
         background: linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        filter: drop-shadow(0px 0px 15px rgba(139, 92, 246, 0.5)); /* The Glowing Effect */
+        filter: drop-shadow(0px 0px 15px rgba(139, 92, 246, 0.5));
     }
     .brand-dot { color: #3B82F6; }
+    
     .hero-subtitle {
         font-family: 'Barlow', sans-serif;
-        font-size: 1.1rem;
-        color: rgba(255, 255, 255, 0.5);
-        max-width: 500px;
+        font-size: 1.05rem;
+        color: rgba(255, 255, 255, 0.6);
+        max-width: 650px;
         margin: 0 auto;
+        line-height: 1.8;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ------------------------------------------
-# HERO SECTION (Glowing Agency Inspired)
+# HERO SECTION (Instructions Integrated)
 # ------------------------------------------
 st.markdown("""
 <div class="hero-container">
     <div class="hero-badge">NALT Engine 2.0</div>
     <div class="hero-title"><span class="brand-lexi">Lexi</span><span class="brand-cite">Cite</span><span class="brand-dot">.</span></div>
-    <div class="hero-subtitle">Pro features. Zero complexity. The aesthetic legal formatting engine built exclusively for Nigerian scholars.</div>
+    <div class="hero-subtitle">
+        <b>1.</b> Draft in Word using bracketed numbers <b>[1]</b> or superscripts <b>¹</b> for footnotes.<br>
+        <b>2.</b> Upload your <b>.docx</b> file and paste your raw numbered sources below.<br>
+        <b>3.</b> Compile to automatically scrub syntax and format to strict <b>NALT</b> standards.
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -276,7 +282,7 @@ col1, col2 = st.columns(2, gap="large")
 with col1:
     with st.container(border=True):
         st.markdown("### 01. The Draft")
-        st.markdown("<p style='font-size: 0.9rem; margin-bottom: 1rem; color: rgba(255,255,255,0.6);'>Upload your unformatted .docx file. Ensure footnotes are marked with brackets [1] or superscripts ¹.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.9rem; margin-bottom: 1rem; color: rgba(255,255,255,0.6);'>Upload your unformatted document.</p>", unsafe_allow_html=True)
         uploaded_file = st.file_uploader("Upload", type=["docx"], label_visibility="collapsed")
         st.write("")
         generate_bib = st.checkbox("Append NALT Bibliography", value=True)
@@ -284,7 +290,7 @@ with col1:
 with col2:
     with st.container(border=True):
         st.markdown("### 02. The Sources")
-        st.markdown("<p style='font-size: 0.9rem; margin-bottom: 1rem; color: rgba(255,255,255,0.6);'>Paste your numbered list. Our engine automatically scrubs banned Latin and standardizes abbreviations.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.9rem; margin-bottom: 1rem; color: rgba(255,255,255,0.6);'>Paste your numbered list.</p>", unsafe_allow_html=True)
         source_list = st.text_area("Sources", height=200, placeholder="1. Prof. Abacha v. Fawehinmi [2000] FWLR (Pt 4) 533\n2. Electoral Act 2022\n3. https://www.courtofappeal.gov.ng/History", label_visibility="collapsed")
 
 st.write("")
