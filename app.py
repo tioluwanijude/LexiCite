@@ -44,39 +44,51 @@ class LexiCiteParser:
             clean_line = re.sub(r',\s*,', ',', clean_line)
             clean_line = re.sub(r'\s+', ' ', clean_line).strip()
 
-            # 6. Extract URL
-            url_match = re.search(r'(https?://[^\s]+|www\.[^\s]+)', clean_line, re.IGNORECASE)
-            url = url_match.group(1).rstrip('.,') if url_match else ""
+            # 6. Extract URL & Clean Web Artifacts
+            # First, extract the actual link
+            url_match = re.search(r'(https?://[^\s>]+|www\.[^\s>]+)', clean_line, re.IGNORECASE)
+            url = url_match.group(1).rstrip('.,;)]>”"') if url_match else ""
             
             if url:
+                # Remove the URL from the title
                 clean_line = clean_line.replace(url_match.group(0), "").strip()
+                # Strip ugly artifacts like `[' <...>` or `"(n 24).` left behind
+                clean_line = re.sub(r'\[\s*[''"]\s*<.*?>\s*\]', '', clean_line)
+                clean_line = re.sub(r'\[\s*[''"]\s*$', '', clean_line)
+                clean_line = re.sub(r'<\s*$', '', clean_line)
                 clean_line = re.sub(r',?\s*Accessed\s+[A-Za-z0-9\s\,]+(?:$|,)', '', clean_line, flags=re.IGNORECASE).strip()
+
+            # Clean trailing cross-reference artifacts from copy-paste (e.g., "(n 24).")
+            clean_line = re.sub(r'\s*\(\s*n\s*\d+\s*\)\.?$', '', clean_line, flags=re.IGNORECASE)
 
             # 7. Extract Year
             year_match = re.search(r'[\(\[](\d{4})[\)\]]', clean_line)
             year = year_match.group(1) if year_match else ""
-            clean_line = clean_line.rstrip(',. ')
-
-            # 8. NALT CATEGORIZATION ENGINE
-            clean_lower = clean_line.lower()
             
-            if re.search(r'\s+v\s+|^re\s+|^ex\s+parte\s+', clean_lower):
+            # Final Title Cleanup (strips trailing punctuation without breaking case)
+            clean_line = clean_line.rstrip(',. >[]\'"').strip()
+
+            # 8. NALT CATEGORIZATION ENGINE (Use lower for checking, but preserve exact case for output)
+            check_string = clean_line.lower()
+            
+            if re.search(r'\s+v\s+|^re\s+|^ex\s+parte\s+', check_string):
                 entry_type = "jurisdiction"
-            elif re.search(r'\b(act|law|decree|edict|constitution)\b', clean_lower):
+            elif re.search(r'\b(act|law|decree|edict|constitution)\b', check_string):
                 entry_type = "legislation"
-            elif re.search(r'\bbill\b', clean_lower):
+            elif re.search(r'\bbill\b', check_string):
                 entry_type = "bill"
-            elif re.search(r'\b(report|law com|cmnd?)\b', clean_lower):
+            elif re.search(r'\b(report|law com|cmnd?)\b', check_string):
                 entry_type = "report"
-            elif "'" in clean_line or '"' in clean_line or re.search(r'\b(journal|review)\b', clean_lower):
-                clean_line = clean_line.replace("'", "").replace('"', '') 
+            elif "'" in clean_line or '"' in clean_line or re.search(r'\b(journal|review)\b', check_string):
+                # Clean stray quotes that break pandoc formatting
+                clean_line = re.sub(r'^[\'"]|[\'"]$', '', clean_line)
                 entry_type = "article"
             elif url:
                 entry_type = "webpage"
             else:
                 entry_type = "book"
 
-            # 9. Build BibTeX
+            # 9. Build BibTeX using the preserved, cleanly capitalized line
             bibtex_entry = f"@{entry_type}{{{source_id},\n  title = {{{clean_line}}},\n  year = {{{year}}}"
             if url:
                 bibtex_entry += f",\n  url = {{{url}}}"
@@ -236,7 +248,7 @@ st.markdown("""
         font-size: 5.5rem;
         line-height: 0.9;
         letter-spacing: -0.02em;
-        margin-bottom: 1.5rem;
+        margin-bottom: 1rem;
         user-select: none;
     }
     .brand-lexi { color: #FFFFFF; }
@@ -244,7 +256,7 @@ st.markdown("""
         background: linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        filter: drop-shadow(0px 0px 15px rgba(139, 92, 246, 0.5));
+        filter: drop-shadow(0px 0px 15px rgba(139, 92, 246, 0.5)); /* The Glowing Effect */
     }
     .brand-dot { color: #3B82F6; }
     
