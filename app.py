@@ -11,48 +11,6 @@ class LexiCiteParser:
     def __init__(self):
         pass
 
-    def smart_format_legal(self, text):
-        """
-        Intelligently title-cases legal citations, protecting acronyms 
-        (NWLR, SC, QB) and stop words (v, and, the).
-        """
-        words = text.split(' ')
-        out = []
-        for i, w in enumerate(words):
-            if not w: 
-                out.append("")
-                continue
-            
-            # Extract word from surrounding punctuation (e.g., "[1962]", "(CA)")
-            m = re.match(r'^([\W_]*)([a-zA-Z0-9\’\'-]+)([\W_]*)$', w)
-            if m:
-                pre, core, post = m.groups()
-                core_low = core.lower()
-                
-                # NALT Formatting Dictionaries
-                stop_words = {'v', 'and', 'of', 'the', 'for', 'in', 'on', 'at', 'to', 'a', 'an', 'de', 'la', 'vs', 'vs.'}
-                acronyms = {'qb', 'qbd', 'ac', 'er', 'hl', 'ca', 'nwlr', 'fwlr', 'sc', 'lpelr', 'uilr', 'llc', 'ukhl', 'nmlr', 'alr', 'npa'}
-                cap_words = {'ltd': 'Ltd', 'co': 'Co', 'plc': 'Plc', 'inc': 'Inc', 'all': 'All', 'pt': 'Pt', 'rep': 'Rep', 'term': 'Term', 'ex': 'Ex', 'exch': 'Exch'}
-                
-                if core_low in stop_words:
-                    core = core.capitalize() if i == 0 else core_low
-                elif core_low in acronyms:
-                    core = core_low.upper()
-                elif core_low in cap_words:
-                    core = cap_words[core_low]
-                else:
-                    # Capitalize normally, but preserve mixed cases if they already exist (e.g., McGregor)
-                    if core == core_low or core == core.upper():
-                        core = core.capitalize()
-                    else:
-                        core = core[0].upper() + core[1:]
-                
-                out.append(pre + core + post)
-            else:
-                out.append(w)
-        return " ".join(out)
-
-
     def generate_bibtex(self, source_list):
         lines = [line.strip() for line in source_list.split('\n') if line.strip()]
         bibtex_output = ""
@@ -60,60 +18,61 @@ class LexiCiteParser:
         for i, line in enumerate(lines):
             source_id = f"source{i+1}"
             
-            # 1. Strip leading numbers/bullets
-            clean_line = re.sub(r'^[\d\.\-\)\s]+', '', line).strip()
+            # 1. Strip leading numbers, colons, and bullets
+            clean_line = re.sub(r'^[\d\.\-\)\:\s]+', '', line).strip()
 
-            # 2. NALT RULE (Pg 71): Omit titles, prefixes, and post-nominals
+            # 2. Extract URL & Clean Web Artifacts First
+            url_match = re.search(r'(https?://[^\s>\]\)]+|www\.[^\s>\]\)]+)', clean_line, re.IGNORECASE)
+            url = url_match.group(1).rstrip('.,;)]>”"\'') if url_match else ""
+            
+            if url:
+                # Strip URL entirely from title
+                clean_line = clean_line.replace(url_match.group(0), "")
+                # Destroy markdown link syntax leftovers like []() or [ ]
+                clean_line = re.sub(r'\[\s*\]\(\s*\)', '', clean_line)
+                clean_line = re.sub(r'\[\s*\]', '', clean_line)
+                clean_line = re.sub(r'\(\s*\)', '', clean_line)
+                clean_line = re.sub(r'<\s*>', '', clean_line)
+                # Destroy dangling brackets at the end of copy-pastes
+                clean_line = re.sub(r'\[\s*[\'"]?\s*$', '', clean_line.strip())
+                clean_line = re.sub(r'\]\s*>\s*\.?$', '', clean_line.strip())
+                clean_line = re.sub(r',?\s*Accessed\s+[A-Za-z0-9\s\,]+(?:$|,)', '', clean_line, flags=re.IGNORECASE)
+
+            # 3. Clean trailing cross-reference artifacts (e.g., "(n 24).")
+            clean_line = re.sub(r'\s*\(\s*n\s*\d+\s*\)\.?$', '', clean_line, flags=re.IGNORECASE)
+
+            # 4. NALT RULE: Omit titles, prefixes, and post-nominals
             nalt_titles = r'\b(Mr\.|Mrs\.|Dr\.|Dr|Prof\.|Professor|Hon\.|Honourable|Justice|Rev\.|Bishop|Alhaji|Hajiya|Chief|SAN|OFR|OON|GCON)\b\,?'
             clean_line = re.sub(nalt_titles, '', clean_line, flags=re.IGNORECASE)
             
-            # 3. NALT RULE (Pg 81): Exterminate Banned Latin Expressions
+            # 5. NALT RULE: Exterminate Banned Latin Expressions
             banned_latin = r'\b(supra|infra|ante|contra|id\.|op\.?\s*cit\.?|loc\.?\s*cit\.?|passim|et\s*seq\.?)\b'
             clean_line = re.sub(banned_latin, '', clean_line, flags=re.IGNORECASE)
 
-            # 4. NALT RULE (Pg 59 & 67): No full stops in abbreviations & unpunctuated 'v'
+            # 6. NALT RULE: No full stops in abbreviations & unpunctuated 'v'
             clean_line = re.sub(r'\s+v\.?\s+', ' v ', clean_line, flags=re.IGNORECASE)
-            # Scrubber for dotted acronyms (e.g., N.W.L.R. -> NWLR)
-            clean_line = re.sub(r'\b([A-Z])\.(?:[A-Z]\.)+', lambda m: m.group(0).replace('.', ''), clean_line)
             
-            # 5. NALT RULE (Pg 63): Section and Part abbreviations
+            # NALT Punctuation Scrubber: removes dots from acronyms/initials (e.g., J.M. -> JM, N.W.L.R -> NWLR)
+            clean_line = re.sub(r'([a-zA-Z])\.', r'\1', clean_line)
+
+            # 7. NALT RULE: Section and Part abbreviations
             clean_line = re.sub(r'\bSections\b', 'ss', clean_line, flags=re.IGNORECASE)
             clean_line = re.sub(r'\bSection\b', 's', clean_line, flags=re.IGNORECASE)
             clean_line = re.sub(r'\bParts\b', 'pts', clean_line, flags=re.IGNORECASE)
             clean_line = re.sub(r'\bPart\b', 'pt', clean_line, flags=re.IGNORECASE)
 
-            # 6. Extract URL & Aggressively Clean Web Artifacts
-            url_match = re.search(r'(https?://[a-zA-Z0-9\.\-\/\?\=\&\_\%]+|www\.[a-zA-Z0-9\.\-\/\?\=\&\_\%]+)', clean_line, re.IGNORECASE)
-            url = url_match.group(1) if url_match else ""
-
-            if url:
-                # Disassemble Markdown links and raw URL brackets
-                clean_line = re.sub(r'\[(.*?)\]\(https?://[^\)]+\)', r'\1', clean_line, flags=re.IGNORECASE)
-                clean_line = re.sub(r'<\s*https?://[^>]+\s*>', '', clean_line, flags=re.IGNORECASE)
-                clean_line = re.sub(r'https?://[^\s]+', '', clean_line, flags=re.IGNORECASE)
-                
-                # Nuke dangling brackets left over from copy-pasting (e.g., "[’" or "]>")
-                clean_line = re.sub(r'\[\s*[\'"]?\s*$', '', clean_line.strip()) 
-                clean_line = re.sub(r'\]\s*>\s*\.?$', '', clean_line.strip()) 
-                clean_line = re.sub(r'\[\’\s*$', '', clean_line.strip()) 
-                clean_line = re.sub(r',?\s*Accessed\s+[A-Za-z0-9\s\,]+(?:$|,)', '', clean_line, flags=re.IGNORECASE)
-                
-            # Clean trailing cross-reference artifacts (e.g., "(n 24).")
-            clean_line = re.sub(r'\s*\(\s*n\s*\d+\s*\)\.?$', '', clean_line, flags=re.IGNORECASE)
-
-            # Cleanup double spaces or stray commas left by scrubbers
+            # 8. Cleanup double spaces or stray commas
             clean_line = re.sub(r',\s*,', ',', clean_line)
             clean_line = re.sub(r'\s+', ' ', clean_line).strip()
 
-            # 7. Apply Smart Title Casing (Fixes the "small letters" issue)
-            clean_line = self.smart_format_legal(clean_line)
-
-            # 8. Extract Year
+            # 9. Extract Year
             year_match = re.search(r'[\(\[](\d{4})[\)\]]', clean_line)
             year = year_match.group(1) if year_match else ""
+            
+            # Final Title Cleanup (strips trailing punctuation without breaking casing)
             clean_line = clean_line.rstrip(',. >[]\'"').strip()
 
-            # 9. NALT CATEGORIZATION ENGINE
+            # 10. NALT CATEGORIZATION ENGINE
             check_string = clean_line.lower()
             
             if re.search(r'\s+v\s+|^re\s+|^ex\s+parte\s+', check_string):
@@ -124,16 +83,18 @@ class LexiCiteParser:
                 entry_type = "bill"
             elif re.search(r'\b(report|law com|cmnd?)\b', check_string):
                 entry_type = "report"
-            elif "'" in clean_line or '"' in clean_line or '“' in clean_line or re.search(r'\b(journal|review)\b', check_string):
+            elif "'" in clean_line or '"' in clean_line or '“' in clean_line or '”' in clean_line or re.search(r'\b(journal|review)\b', check_string):
+                # Clean stray outer quotes
                 clean_line = re.sub(r'^[\'"]|[\'"]$', '', clean_line)
+                clean_line = re.sub(r'^[‘“]|[’”]$', '', clean_line)
                 entry_type = "article"
             elif url:
                 entry_type = "webpage"
             else:
                 entry_type = "book"
 
-            # 10. Build BibTeX
-            bibtex_entry = f"@{entry_type}{{{source_id},\n  title = {{{clean_line}}},\n  year = {{{year}}}"
+            # 11. Build BibTeX (Using {{ }} to force exact casing preservation in Pandoc)
+            bibtex_entry = f"@{entry_type}{{{source_id},\n  title = {{{{{clean_line}}}}},\n  year = {{{year}}}"
             if url:
                 bibtex_entry += f",\n  url = {{{url}}}"
             bibtex_entry += "\n}\n\n"
@@ -201,7 +162,7 @@ class LexiCiteEngine:
 # ==========================================
 st.set_page_config(page_title="LexiCite | NALT", page_icon="⚡", layout="wide")
 
-# --- CLEANED LIQUID GLASS & DARK PREMIUM CSS ---
+# --- LIQUID GLASS & DARK PREMIUM CSS ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500&family=Instrument+Serif:ital@0;1&display=swap');
@@ -212,7 +173,7 @@ st.markdown("""
         background-image: radial-gradient(circle at 50% 0%, rgba(255,255,255,0.04) 0%, transparent 70%);
     }
     
-    /* Safe Typography Overrides (Avoids breaking Streamlit icons) */
+    /* Safe Typography Overrides */
     html, body, p, .stMarkdown, .stText { 
         font-family: 'Barlow', sans-serif !important; 
     }
