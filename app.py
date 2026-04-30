@@ -11,150 +11,121 @@ class LexiCiteParser:
     def __init__(self):
         pass
 
-    def generate_bibtex(self, source_list):
+    def process_sources(self, source_list):
         lines = [line.strip() for line in source_list.split('\n') if line.strip()]
-        bibtex_output = ""
+        cleaned_footnotes = []
+        bib_entries = []
 
-        for i, line in enumerate(lines):
-            source_id = f"source{i+1}"
-            
-            # 1. Strip leading numbers, colons, and bullets
-            clean_line = re.sub(r'^[\d\.\-\)\:\s]+', '', line).strip()
+        for line in lines:
+            # 1. Strip leading numbering: "1: ", "[1] ", "¹ "
+            clean_line = re.sub(r'^[\d\.\-\)\:\s¹²³⁴⁵⁶⁷⁸⁹⁰]+', '', line).strip()
 
-            # 2. Extract URL & Clean Web Artifacts First
-            url_match = re.search(r'(https?://[^\s>\]\)]+|www\.[^\s>\]\)]+)', clean_line, re.IGNORECASE)
-            url = url_match.group(1).rstrip('.,;)]>”"\'') if url_match else ""
-            
-            if url:
-                # Strip URL entirely from title
-                clean_line = clean_line.replace(url_match.group(0), "")
-                # Destroy markdown link syntax leftovers like []() or [ ]
-                clean_line = re.sub(r'\[\s*\]\(\s*\)', '', clean_line)
-                clean_line = re.sub(r'\[\s*\]', '', clean_line)
-                clean_line = re.sub(r'\(\s*\)', '', clean_line)
-                clean_line = re.sub(r'<\s*>', '', clean_line)
-                # Destroy dangling brackets at the end of copy-pastes
-                clean_line = re.sub(r'\[\s*[\'"]?\s*$', '', clean_line.strip())
-                clean_line = re.sub(r'\]\s*>\s*\.?$', '', clean_line.strip())
-                clean_line = re.sub(r',?\s*Accessed\s+[A-Za-z0-9\s\,]+(?:$|,)', '', clean_line, flags=re.IGNORECASE)
-
-            # 3. Clean trailing cross-reference artifacts (e.g., "(n 24).")
-            clean_line = re.sub(r'\s*\(\s*n\s*\d+\s*\)\.?$', '', clean_line, flags=re.IGNORECASE)
-
-            # 4. NALT RULE: Omit titles, prefixes, and post-nominals
-            nalt_titles = r'\b(Mr\.|Mrs\.|Dr\.|Dr|Prof\.|Professor|Hon\.|Honourable|Justice|Rev\.|Bishop|Alhaji|Hajiya|Chief|SAN|OFR|OON|GCON)\b\,?'
+            # 2. NALT RULE (Pg 71): Omit titles, prefixes, and post-nominals
+            nalt_titles = r'\b(Mr\.|Mrs\.|Dr\.|Dr|Prof\.|Professor|Hon\.|Honourable|Justice|Rev\.|Bishop|Alhaji|Hajiya|Chief|SAN|OFR|OON|GCON)\b\,?\s*'
             clean_line = re.sub(nalt_titles, '', clean_line, flags=re.IGNORECASE)
-            
-            # 5. NALT RULE: Exterminate Banned Latin Expressions
+
+            # 3. NALT RULE (Pg 81): Exterminate Banned Latin Expressions
             banned_latin = r'\b(supra|infra|ante|contra|id\.|op\.?\s*cit\.?|loc\.?\s*cit\.?|passim|et\s*seq\.?)\b'
             clean_line = re.sub(banned_latin, '', clean_line, flags=re.IGNORECASE)
 
-            # 6. NALT RULE: No full stops in abbreviations & unpunctuated 'v'
+            # 4. NALT RULE (Pg 59 & 67): Punctuation & Acronyms
             clean_line = re.sub(r'\s+v\.?\s+', ' v ', clean_line, flags=re.IGNORECASE)
-            
-            # NALT Punctuation Scrubber: removes dots from acronyms/initials (e.g., J.M. -> JM, N.W.L.R -> NWLR)
-            clean_line = re.sub(r'([a-zA-Z])\.', r'\1', clean_line)
+            # Scrubber for dotted acronyms (e.g., N.W.L.R. -> NWLR, J.M. -> JM)
+            clean_line = re.sub(r'([A-Za-z])\.', r'\1', clean_line)
 
-            # 7. NALT RULE: Section and Part abbreviations
+            # 5. NALT RULE (Pg 63): Section and Part abbreviations
             clean_line = re.sub(r'\bSections\b', 'ss', clean_line, flags=re.IGNORECASE)
             clean_line = re.sub(r'\bSection\b', 's', clean_line, flags=re.IGNORECASE)
             clean_line = re.sub(r'\bParts\b', 'pts', clean_line, flags=re.IGNORECASE)
             clean_line = re.sub(r'\bPart\b', 'pt', clean_line, flags=re.IGNORECASE)
 
-            # 8. Cleanup double spaces or stray commas
+            # 6. Clean URLs and Web Artifacts
+            # Extract URL from markdown links [URL](URL) or <URL>
+            clean_line = re.sub(r'\[\s*(https?://[^\s\]\>]+)\s*\]\(.*?\)', r'\1', clean_line)
+            clean_line = re.sub(r'<\s*(https?://[^\s\>]+)\s*>', r'\1', clean_line)
+            
+            # Remove "accessed DD Month YYYY"
+            clean_line = re.sub(r',?\s*accessed\s+\d{1,2}\s+[a-zA-Z]+\s+\d{4}\.?', '', clean_line, flags=re.IGNORECASE)
+
+            # Clean trailing cross-reference artifacts from copy-paste (e.g., "(n 24).")
+            # We keep the cross-reference in the footnote, but we need to track if it IS a cross reference for the bibliography.
+            
+            # 7. Final Polish
             clean_line = re.sub(r',\s*,', ',', clean_line)
             clean_line = re.sub(r'\s+', ' ', clean_line).strip()
+            # Strip trailing weird characters but leave valid punctuation
+            clean_line = clean_line.rstrip('>[]')
 
-            # 9. Extract Year
-            year_match = re.search(r'[\(\[](\d{4})[\)\]]', clean_line)
-            year = year_match.group(1) if year_match else ""
+            cleaned_footnotes.append(clean_line)
+
+            # 8. BIBLIOGRAPHY FILTER
+            # We do not want 'ibid' or short cross-references in the master bibliography
+            is_ibid = clean_line.lower() in ['ibid', 'ibid.']
+            is_cross_ref = bool(re.search(r'\(\s*n\s*\d+\s*\)\.?$', clean_line, flags=re.IGNORECASE))
             
-            # Final Title Cleanup (strips trailing punctuation without breaking casing)
-            clean_line = clean_line.rstrip(',. >[]\'"').strip()
+            if not is_ibid and not is_cross_ref:
+                # Ensure no exact duplicates in the bibliography
+                if clean_line not in bib_entries:
+                    bib_entries.append(clean_line)
 
-            # 10. NALT CATEGORIZATION ENGINE
-            check_string = clean_line.lower()
-            
-            if re.search(r'\s+v\s+|^re\s+|^ex\s+parte\s+', check_string):
-                entry_type = "jurisdiction"
-            elif re.search(r'\b(act|law|decree|edict|constitution)\b', check_string):
-                entry_type = "legislation"
-            elif re.search(r'\bbill\b', check_string):
-                entry_type = "bill"
-            elif re.search(r'\b(report|law com|cmnd?)\b', check_string):
-                entry_type = "report"
-            elif "'" in clean_line or '"' in clean_line or '“' in clean_line or '”' in clean_line or re.search(r'\b(journal|review)\b', check_string):
-                # Clean stray outer quotes
-                clean_line = re.sub(r'^[\'"]|[\'"]$', '', clean_line)
-                clean_line = re.sub(r'^[‘“]|[’”]$', '', clean_line)
-                entry_type = "article"
-            elif url:
-                entry_type = "webpage"
-            else:
-                entry_type = "book"
-
-            # 11. Build BibTeX (Using {{ }} to force exact casing preservation in Pandoc)
-            bibtex_entry = f"@{entry_type}{{{source_id},\n  title = {{{{{clean_line}}}}},\n  year = {{{year}}}"
-            if url:
-                bibtex_entry += f",\n  url = {{{url}}}"
-            bibtex_entry += "\n}\n\n"
-            
-            bibtex_output += bibtex_entry
-
-        return bibtex_output
+        # Alphabetize Bibliography
+        bib_entries.sort(key=lambda x: x.lower())
+        
+        return cleaned_footnotes, bib_entries
 
 # ==========================================
 # 2. THE NALT COMPILATION ENGINE (Backend)
 # ==========================================
 class LexiCiteEngine:
-    def __init__(self, csl_url="https://raw.githubusercontent.com/citation-style-language/styles/master/oscola.csl"):
-        self.csl_filename = "nalt_core.csl"
-        self._ensure_csl(csl_url)
-
-    def _ensure_csl(self, url):
-        if not os.path.exists(self.csl_filename):
-            urllib.request.urlretrieve(url, self.csl_filename)
-
     def _to_unicode_super(self, num_str):
         super_map = {'0':'⁰', '1':'¹', '2':'²', '3':'³', '4':'⁴', '5':'⁵', '6':'⁶', '7':'⁷', '8':'⁸', '9':'⁹'}
         return "".join([super_map[char] for char in num_str])
 
-    def format_document(self, docx_bytes, bibtex_data, num_sources, generate_bib):
-        input_docx, md_file, bib_file, output_docx = "temp_in.docx", "temp.md", "library.bib", "LexiCite_Formatted.docx"
+    def format_document(self, docx_bytes, cleaned_footnotes, bib_entries, generate_bib):
+        input_docx, md_file, output_docx = "temp_in.docx", "temp.md", "LexiCite_NALT_Formatted.docx"
         try:
-            with open(bib_file, "w", encoding="utf-8") as f: f.write(bibtex_data)
             with open(input_docx, "wb") as f: f.write(docx_bytes)
 
+            # Convert uploaded docx to markdown to inject footnotes natively
             subprocess.run(["pandoc", input_docx, "-t", "markdown", "-o", md_file], check=True)
             with open(md_file, "r", encoding="utf-8") as f: md_text = f.read()
 
+            num_sources = len(cleaned_footnotes)
+            # Sort numbers in reverse order so replacing '10' happens before '1'
             sorted_nums = sorted([str(i) for i in range(1, num_sources + 1)], key=len, reverse=True)
+            
             footnote_appendix = "\n\n"
 
             for num in sorted_nums:
                 marker = f"[^{num}]"
+                
+                # --- STRICT MODE ---
+                # 1. Match ONLY raw Unicode superscripts (e.g., ¹, ², ³)
+                # We have completely removed support for [1], ^1^, and (1)
                 md_text = md_text.replace(self._to_unicode_super(num), marker)
-                md_text = re.sub(r'\\?\[\s*' + num + r'\s*\\?\]', marker, md_text)
-                md_text = re.sub(r'\(\s*' + num + r'\s*\)', marker, md_text)
-                md_text = re.sub(r'\^\s*' + num + r'\s*\^', marker, md_text)
-                footnote_appendix += f"[^{num}]: [@source{num}]\n\n"
+                
+                # Fetch the correct scrubbed footnote text
+                idx = int(num) - 1
+                if idx < len(cleaned_footnotes):
+                    footnote_text = cleaned_footnotes[idx]
+                    footnote_appendix += f"[^{num}]: {footnote_text}\n\n"
 
             md_text += footnote_appendix
             
-            if generate_bib:
+            # --- NALT BIBLIOGRAPHY GENERATION ---
+            if generate_bib and bib_entries:
                 md_text += "\n\n<br><br>\n\n# BIBLIOGRAPHY\n\n"
+                for entry in bib_entries:
+                    md_text += f"* {entry}\n\n"
                 
             with open(md_file, "w", encoding="utf-8") as f: f.write(md_text)
 
-            cmd = ["pandoc", md_file, "--citeproc", f"--bibliography={bib_file}", f"--csl={self.csl_filename}"]
-            if not generate_bib:
-                cmd.extend(["-M", "suppress-bibliography=true"])
-            cmd.extend(["-o", output_docx])
-            
-            subprocess.run(cmd, check=True)
+            # Convert directly back to Docx. Citeproc is bypassed for pristine formatting.
+            subprocess.run(["pandoc", md_file, "-o", output_docx], check=True)
             return output_docx
+            
         finally:
-            for f in [input_docx, md_file, bib_file]: 
+            for f in [input_docx, md_file]: 
                 if os.path.exists(f): os.remove(f)
 
 # ==========================================
@@ -162,7 +133,7 @@ class LexiCiteEngine:
 # ==========================================
 st.set_page_config(page_title="LexiCite | NALT", page_icon="⚡", layout="wide")
 
-# --- LIQUID GLASS & DARK PREMIUM CSS ---
+# --- CLEANED LIQUID GLASS & DARK PREMIUM CSS ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500&family=Instrument+Serif:ital@0;1&display=swap');
@@ -261,7 +232,7 @@ st.markdown("""
         background: linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        filter: drop-shadow(0px 0px 15px rgba(139, 92, 246, 0.5)); /* The Glowing Effect */
+        filter: drop-shadow(0px 0px 15px rgba(139, 92, 246, 0.5));
     }
     .brand-dot { color: #3B82F6; }
     
@@ -284,7 +255,7 @@ st.markdown("""
     <div class="hero-badge">NALT Engine 2.0</div>
     <div class="hero-title"><span class="brand-lexi">Lexi</span><span class="brand-cite">Cite</span><span class="brand-dot">.</span></div>
     <div class="hero-subtitle">
-        <b>1.</b> Draft in Word using bracketed numbers <b>[1]</b> or superscripts <b>¹</b> for footnotes.<br>
+        <b>1.</b> Draft in Word using true Unicode superscripts (<b>¹</b>, <b>²</b>, <b>³</b>) for footnotes.<br>
         <b>2.</b> Upload your <b>.docx</b> file and paste your raw numbered sources below.<br>
         <b>3.</b> Compile to automatically scrub syntax and format to strict <b>NALT</b> standards.
     </div>
@@ -299,7 +270,7 @@ col1, col2 = st.columns(2, gap="large")
 with col1:
     with st.container(border=True):
         st.markdown("### 01. The Draft")
-        st.markdown("<p style='font-size: 0.9rem; margin-bottom: 1rem; color: rgba(255,255,255,0.6);'>Upload your unformatted document.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.9rem; margin-bottom: 1rem; color: rgba(255,255,255,0.6);'>Upload your unformatted document. Ensure footnotes use strict Unicode superscripts (¹).</p>", unsafe_allow_html=True)
         uploaded_file = st.file_uploader("Upload", type=["docx"], label_visibility="collapsed")
         st.write("")
         generate_bib = st.checkbox("Append NALT Bibliography", value=True)
@@ -331,14 +302,13 @@ with col_center:
         else:
             with st.status("Reconstructing Jurisprudence...", expanded=True) as status:
                 try:
-                    st.write("🔍 Sanitizing syntax & classifying sources...")
+                    st.write("🔍 Sanitizing syntax & generating bibliography...")
                     parser = LexiCiteParser()
-                    bib_data = parser.generate_bibtex(source_list)
-                    num_sources = len([l for l in source_list.split('\n') if l.strip()])
+                    cleaned_footnotes, bib_entries = parser.process_sources(source_list)
 
-                    st.write("⚙️ Applying strict NALT formatting rules...")
+                    st.write("⚙️ Applying strict NALT formatting rules natively...")
                     engine = LexiCiteEngine()
-                    final_path = engine.format_document(uploaded_file.getbuffer(), bib_data, num_sources, generate_bib)
+                    final_path = engine.format_document(uploaded_file.getbuffer(), cleaned_footnotes, bib_entries, generate_bib)
                     
                     status.update(label="Compilation Complete.", state="complete")
                     
@@ -357,8 +327,15 @@ with col_center:
                             use_container_width=True
                         )
                         
-                    with st.expander("View Backend Trace (BibTeX)"):
-                        st.code(bib_data, language="bibtex")
+                    with st.expander("View System Logs & Scrubbed Output"):
+                        st.markdown("**Cleaned Footnotes Injected:**")
+                        for idx, fn in enumerate(cleaned_footnotes):
+                            st.write(f"[{idx+1}] {fn}")
+                        if generate_bib:
+                            st.markdown("---")
+                            st.markdown("**Generated Bibliography:**")
+                            for b in bib_entries:
+                                st.write(f"- {b}")
 
                 except Exception as e:
                     status.update(label="System Error", state="error", expanded=True)
