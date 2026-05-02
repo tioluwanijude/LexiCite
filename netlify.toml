@@ -1,0 +1,23 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+  # Increase timeout to 30s for large documents (requires Netlify paid plan;
+  # free tier is capped at 10s — typical documents compile in < 5s)
+  timeout = 30
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Redirect all requests that aren't static files to the SPA
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+  conditions = { Role = [""] }

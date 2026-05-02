@@ -1,0 +1,12 @@
+{
+  "name": "lexicite-nalt",
+  "version": "2.0.0",
+  "description": "NALT Legal Citation Formatter — Nigerian Legal Practice",
+  "private": true,
+  "dependencies": {
+    "jszip": "^3.10.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
